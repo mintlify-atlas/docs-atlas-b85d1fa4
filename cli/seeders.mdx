@@ -1,0 +1,314 @@
+---
+title: "Seeders"
+description: "Populate your database with test or initial data using seeders"
+keywords: ["sequelize", "seeders", "seed", "bulkInsert", "test data", "fixtures"]
+---
+
+Seeders are scripts that insert data into your database. You use them to set up an initial data state — for example, default roles, configuration records, or a realistic dataset for development and testing.
+
+Unlike migrations, which change the **structure** of your database, seeders change the **content**. A seeder inserts rows; a migration adds columns.
+
+## Seeders vs migrations
+
+| | Migrations | Seeders |
+|---|---|---|
+| Purpose | Schema changes | Data population |
+| Tracked by Sequelize | Yes (`SequelizeMeta`) | No (by default) |
+| Required in production | Yes | Depends on use case |
+| Typical contents | `createTable`, `addColumn` | `bulkInsert`, `bulkDelete` |
+
+<Note>
+Sequelize does not automatically track which seeders have been run. It is your responsibility to manage idempotency — for example, by checking for existing records before inserting, or by using an `upsert` pattern.
+</Note>
+
+## Generating a seeder file
+
+Use the `seed generate` command to create a new timestamped seed file:
+
+```bash
+sequelize seed generate --format=typescript --name="demo-users"
+```
+
+The CLI will create a file in your configured `seedFolder` (default: `./seeds`):
+
+```
+seeds/
+└── 20240315150000-demo-users.ts
+```
+
+For the `sql` format, a directory containing two files is created instead:
+
+```
+seeds/
+└── 20240315150000-demo-users/
+    ├── up.sql
+    └── down.sql
+```
+
+<Tip>
+Use `--no-interactive` and supply all flags explicitly to skip prompts in scripts and CI:
+
+```bash
+sequelize seed generate --no-interactive --format=typescript --name="demo-users"
+```
+</Tip>
+
+## Seeder file structure
+
+A generated TypeScript seed file looks like this:
+
+```typescript 20240315150000-demo-users.ts
+import { AbstractQueryInterface, Sequelize } from '@sequelize/core';
+
+export async function up(
+  queryInterface: AbstractQueryInterface,
+  sequelize: Sequelize,
+): Promise<void> {
+  /**
+   * Insert seed data here.
+   *
+   * Example:
+   * await queryInterface.bulkInsert('People', [{
+   *   name: 'John Doe',
+   *   isBetaMember: false
+   * }], {});
+   */
+}
+
+export async function down(
+  queryInterface: AbstractQueryInterface,
+  sequelize: Sequelize,
+): Promise<void> {
+  /**
+   * Revert seed data here.
+   *
+   * Example:
+   * await queryInterface.bulkDelete('People', null, {});
+   */
+}
+```
+
+The same skeleton is available in ESM and CJS formats:
+
+<CodeGroup>
+
+```javascript ESM (.mjs)
+/** @type {import('@sequelize/cli').SeedFunction} */
+export async function up(queryInterface, sequelize) {
+  await queryInterface.bulkInsert('users', [
+    { name: 'Alice', email: 'alice@example.com', createdAt: new Date(), updatedAt: new Date() },
+    { name: 'Bob', email: 'bob@example.com', createdAt: new Date(), updatedAt: new Date() },
+  ]);
+}
+
+/** @type {import('@sequelize/cli').SeedFunction} */
+export async function down(queryInterface, sequelize) {
+  await queryInterface.bulkDelete('users', null, {});
+}
+```
+
+```javascript CJS (.cjs)
+'use strict';
+
+module.exports = {
+  /** @type {import('@sequelize/cli').SeedFunction} */
+  async up(queryInterface, sequelize) {
+    await queryInterface.bulkInsert('users', [
+      { name: 'Alice', email: 'alice@example.com', createdAt: new Date(), updatedAt: new Date() },
+      { name: 'Bob', email: 'bob@example.com', createdAt: new Date(), updatedAt: new Date() },
+    ]);
+  },
+
+  /** @type {import('@sequelize/cli').SeedFunction} */
+  async down(queryInterface, sequelize) {
+    await queryInterface.bulkDelete('users', null, {});
+  },
+};
+```
+
+</CodeGroup>
+
+## Core seeder operations
+
+### `queryInterface.bulkInsert`
+
+Inserts multiple rows into a table in a single query:
+
+```typescript
+await queryInterface.bulkInsert('users', [
+  {
+    name: 'Alice',
+    email: 'alice@example.com',
+    role: 'admin',
+    createdAt: new Date(),
+    updatedAt: new Date(),
+  },
+  {
+    name: 'Bob',
+    email: 'bob@example.com',
+    role: 'member',
+    createdAt: new Date(),
+    updatedAt: new Date(),
+  },
+]);
+```
+
+### `queryInterface.bulkDelete`
+
+Deletes rows matching a `WHERE` condition. Pass `null` to delete all rows in the table:
+
+```typescript
+// Delete specific rows
+await queryInterface.bulkDelete('users', { role: 'admin' });
+
+// Delete all rows
+await queryInterface.bulkDelete('users', null, {});
+```
+
+### `queryInterface.bulkUpdate`
+
+Updates multiple rows at once:
+
+```typescript
+await queryInterface.bulkUpdate(
+  'users',
+  { emailVerified: true },  // values to set
+  { role: 'admin' },        // WHERE condition
+);
+```
+
+## Practical example: users and posts
+
+This example seeds a `users` table and a related `posts` table. It demonstrates how to handle foreign keys and clean up correctly in `down`.
+
+```typescript 20240315150000-demo-users-and-posts.ts
+import { AbstractQueryInterface, Sequelize } from '@sequelize/core';
+
+const users = [
+  { id: 1, name: 'Alice', email: 'alice@example.com', createdAt: new Date(), updatedAt: new Date() },
+  { id: 2, name: 'Bob', email: 'bob@example.com', createdAt: new Date(), updatedAt: new Date() },
+];
+
+const posts = [
+  {
+    title: 'Hello from Alice',
+    body: 'This is a demo post.',
+    authorId: 1,
+    createdAt: new Date(),
+    updatedAt: new Date(),
+  },
+  {
+    title: 'Bob\'s first post',
+    body: 'Another demo post.',
+    authorId: 2,
+    createdAt: new Date(),
+    updatedAt: new Date(),
+  },
+];
+
+export async function up(
+  queryInterface: AbstractQueryInterface,
+): Promise<void> {
+  await queryInterface.bulkInsert('users', users);
+  await queryInterface.bulkInsert('posts', posts);
+}
+
+export async function down(
+  queryInterface: AbstractQueryInterface,
+): Promise<void> {
+  // Delete in reverse dependency order to satisfy foreign key constraints
+  await queryInterface.bulkDelete('posts', null, {});
+  await queryInterface.bulkDelete('users', null, {});
+}
+```
+
+<Warning>
+When seeding tables with foreign key relationships, insert parent rows before child rows in `up`, and delete child rows before parent rows in `down`.
+</Warning>
+
+## Running seeders
+
+The CLI's `seed generate` command only creates the file. How you actually execute seeders depends on your project setup. A common pattern is to invoke the seeder files directly from a script:
+
+```typescript run-seeds.ts
+import { Sequelize } from '@sequelize/core';
+import { up } from './seeds/20240315150000-demo-users.js';
+
+const sequelize = new Sequelize(/* your config */);
+
+await up(sequelize.queryInterface, sequelize);
+await sequelize.close();
+```
+
+Alternatively, you can import and run multiple seeders in sequence:
+
+```typescript run-seeds.ts
+import { Sequelize } from '@sequelize/core';
+import * as demoUsers from './seeds/20240315150000-demo-users.js';
+import * as demoPosts from './seeds/20240315150100-demo-posts.js';
+
+const sequelize = new Sequelize(/* your config */);
+const qi = sequelize.queryInterface;
+
+await demoUsers.up(qi, sequelize);
+await demoPosts.up(qi, sequelize);
+
+await sequelize.close();
+```
+
+Add this to your `package.json` scripts for convenience:
+
+```json package.json
+{
+  "scripts": {
+    "db:seed": "node --import tsx/esm run-seeds.ts"
+  }
+}
+```
+
+## Making seeders idempotent
+
+Because Sequelize does not track which seeders have run, running a seeder twice can result in duplicate rows or constraint violations. Guard against this with an existence check:
+
+```typescript
+export async function up(queryInterface) {
+  const [existing] = await queryInterface.sequelize.query(
+    `SELECT id FROM users WHERE email = 'alice@example.com' LIMIT 1`
+  );
+
+  if (existing.length > 0) {
+    return; // already seeded
+  }
+
+  await queryInterface.bulkInsert('users', [
+    { name: 'Alice', email: 'alice@example.com', createdAt: new Date(), updatedAt: new Date() },
+  ]);
+}
+```
+
+Or use `upsert` via the model layer if you have access to your Sequelize models from within the seeder:
+
+```typescript
+export async function up(queryInterface, sequelize) {
+  // Using raw upsert query (syntax varies by dialect)
+  await queryInterface.upsert('users', {
+    name: 'Alice',
+    email: 'alice@example.com',
+    createdAt: new Date(),
+    updatedAt: new Date(),
+  }, {
+    conflictFields: ['email'],
+  });
+}
+```
+
+## See also
+
+<CardGroup cols={2}>
+  <Card title="CLI overview" icon="terminal" href="/cli/overview">
+    Installation, configuration, and all available CLI commands.
+  </Card>
+  <Card title="Migrations" icon="arrow-up" href="/cli/migrations">
+    Manage database schema changes with versioned migration files.
+  </Card>
+</CardGroup>

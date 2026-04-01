@@ -1,0 +1,417 @@
+---
+title: "Defining Models"
+description: "Define database tables as Sequelize Model classes"
+keywords: ["sequelize", "model", "define", "init", "table", "schema"]
+---
+
+A model is a class that represents a table in the database. Each instance of the model corresponds to a row. Sequelize provides two approaches to define models: the `Model.init()` class-based approach and TypeScript decorators.
+
+## Extending the Model class
+
+Every model must extend the base `Model` class and describe its attributes. Using `InferAttributes` and `InferCreationAttributes` gives you automatic TypeScript inference of the instance type and the creation type.
+
+```typescript
+import {
+  Model,
+  InferAttributes,
+  InferCreationAttributes,
+  CreationOptional,
+  DataTypes,
+  Sequelize,
+} from '@sequelize/core';
+
+class User extends Model<
+  InferAttributes<User>,
+  InferCreationAttributes<User>
+> {
+  // CreationOptional marks fields that can be omitted on create
+  declare id: CreationOptional<number>;
+  declare username: string;
+  declare email: string;
+  declare createdAt: CreationOptional<Date>;
+  declare updatedAt: CreationOptional<Date>;
+}
+```
+
+## Approach 1: Model.init()
+
+`Model.init()` registers a model with its attribute definitions and options. It must be called before any queries are run against the model.
+
+```typescript
+const sequelize = new Sequelize('sqlite::memory:');
+
+User.init(
+  {
+    id: {
+      type: DataTypes.INTEGER,
+      primaryKey: true,
+      autoIncrement: true,
+    },
+    username: {
+      type: DataTypes.STRING(100),
+      allowNull: false,
+      unique: true,
+    },
+    email: {
+      type: DataTypes.STRING,
+      allowNull: false,
+      unique: true,
+    },
+    role: {
+      type: DataTypes.ENUM('admin', 'user', 'guest'),
+      defaultValue: 'user',
+    },
+  },
+  {
+    sequelize,
+    tableName: 'users',
+    timestamps: true,
+    underscored: true,
+  },
+);
+```
+
+## Approach 2: TypeScript decorators
+
+Decorators let you co-locate attribute metadata with the class property declaration. You must register the model with the Sequelize instance after defining it.
+
+<Note>
+Decorator support requires `experimentalDecorators: true` in your `tsconfig.json`.
+</Note>
+
+```typescript
+import {
+  Model,
+  InferAttributes,
+  InferCreationAttributes,
+  CreationOptional,
+  DataTypes,
+  Sequelize,
+} from '@sequelize/core';
+import {
+  Attribute,
+  PrimaryKey,
+  AutoIncrement,
+  NotNull,
+  Default,
+  Unique,
+  Table,
+} from '@sequelize/core/decorators-legacy';
+
+@Table({ tableName: 'users', timestamps: true, underscored: true })
+class User extends Model<
+  InferAttributes<User>,
+  InferCreationAttributes<User>
+> {
+  @Attribute(DataTypes.INTEGER)
+  @PrimaryKey
+  @AutoIncrement
+  declare id: CreationOptional<number>;
+
+  @Attribute(DataTypes.STRING(100))
+  @NotNull
+  @Unique
+  declare username: string;
+
+  @Attribute(DataTypes.STRING)
+  @NotNull
+  @Unique
+  declare email: string;
+
+  @Attribute(DataTypes.ENUM('admin', 'user', 'guest'))
+  @Default('user')
+  declare role: 'admin' | 'user' | 'guest';
+
+  declare createdAt: CreationOptional<Date>;
+  declare updatedAt: CreationOptional<Date>;
+}
+
+const sequelize = new Sequelize('sqlite::memory:', {
+  models: [User],
+});
+```
+
+## Model options
+
+These options are passed as the second argument to `Model.init()`, or as the argument to the `@Table` decorator.
+
+<AccordionGroup>
+  <Accordion title="Table naming">
+
+| Option | Type | Default | Description |
+|---|---|---|---|
+| `tableName` | `string` | pluralized model name | The SQL table name. |
+| `freezeTableName` | `boolean` | `false` | If `true`, Sequelize will not pluralize the model name when deriving the table name. Has no effect if `tableName` is set. |
+| `underscored` | `boolean` | `false` | If `true`, column names are automatically converted to `snake_case`. |
+| `schema` | `string` | — | Database schema to place the table in. |
+
+  </Accordion>
+  <Accordion title="Timestamps">
+
+| Option | Type | Default | Description |
+|---|---|---|---|
+| `timestamps` | `boolean` | `true` | Automatically adds `createdAt` and `updatedAt` columns. |
+| `paranoid` | `boolean` | `false` | Instead of deleting rows, sets a `deletedAt` timestamp. Requires `timestamps: true`. |
+| `createdAt` | `string \| false` | `'createdAt'` | Override or disable the `createdAt` column name. |
+| `updatedAt` | `string \| false` | `'updatedAt'` | Override or disable the `updatedAt` column name. |
+| `deletedAt` | `string \| false` | `'deletedAt'` | Override or disable the `deletedAt` column name. Requires `paranoid: true`. |
+
+  </Accordion>
+  <Accordion title="Validation">
+
+| Option | Type | Description |
+|---|---|---|
+| `validate` | `object` | Model-wide validators. Each key is a validator name, and the value is a function with `this` bound to the model instance. |
+
+  </Accordion>
+</AccordionGroup>
+
+## Attribute options
+
+Each attribute in `Model.init()` can be either a bare `DataType` or a full options object.
+
+<AccordionGroup>
+  <Accordion title="Column options reference">
+
+| Option | Type | Default | Description |
+|---|---|---|---|
+| `type` | `DataType` | required | The data type for this column. |
+| `allowNull` | `boolean` | `true` | If `false`, adds a `NOT NULL` constraint and runs a not-null validation. |
+| `defaultValue` | `unknown` | — | A literal value, a JS function, or `DataTypes.NOW`. |
+| `unique` | `boolean \| string` | `false` | Adds a unique constraint. Pass a string to create a named composite unique index. |
+| `primaryKey` | `boolean` | `false` | Marks this column as the primary key. |
+| `autoIncrement` | `boolean` | `false` | Makes the column auto-increment. |
+| `columnName` | `string` | attribute name | The actual column name in SQL (formerly `field`). |
+| `comment` | `string` | — | SQL comment on the column. |
+| `validate` | `ColumnValidateOptions` | — | Per-attribute validators. |
+
+  </Accordion>
+</AccordionGroup>
+
+### Shorthand vs full options
+
+```typescript
+// Shorthand: just the data type
+{ username: DataTypes.STRING }
+
+// Full options
+{
+  username: {
+    type: DataTypes.STRING(100),
+    allowNull: false,
+    unique: true,
+    defaultValue: 'anonymous',
+    columnName: 'user_name',   // maps JS attribute to SQL column
+  }
+}
+```
+
+## Primary keys
+
+Sequelize automatically adds an integer primary key named `id` if no primary key is defined. To define your own:
+
+<Tabs>
+  <Tab title="Model.init()">
+    ```typescript
+    User.init({
+      id: {
+        type: DataTypes.INTEGER,
+        primaryKey: true,
+        autoIncrement: true,
+      },
+    }, { sequelize });
+    ```
+  </Tab>
+  <Tab title="Decorators">
+    ```typescript
+    @Attribute(DataTypes.INTEGER)
+    @PrimaryKey
+    @AutoIncrement
+    declare id: CreationOptional<number>;
+    ```
+  </Tab>
+</Tabs>
+
+For UUID primary keys:
+
+<Tabs>
+  <Tab title="Model.init()">
+    ```typescript
+    User.init({
+      id: {
+        type: DataTypes.UUID,
+        primaryKey: true,
+        defaultValue: DataTypes.UUIDV4,
+      },
+    }, { sequelize });
+    ```
+  </Tab>
+  <Tab title="Decorators">
+    ```typescript
+    @Attribute({ type: DataTypes.UUID, defaultValue: DataTypes.UUIDV4 })
+    @PrimaryKey
+    declare id: CreationOptional<string>;
+    ```
+  </Tab>
+</Tabs>
+
+## Default values
+
+```typescript
+// Static default
+{ status: { type: DataTypes.STRING, defaultValue: 'active' } }
+
+// Current timestamp
+{ createdAt: { type: DataTypes.DATE, defaultValue: DataTypes.NOW } }
+
+// Function evaluated on each create (JavaScript-side)
+{ token: { type: DataTypes.STRING, defaultValue: () => crypto.randomUUID() } }
+```
+
+## Column aliasing
+
+Use `columnName` (or the deprecated `field`) to map a JavaScript attribute name to a different SQL column name:
+
+```typescript
+{
+  firstName: {
+    type: DataTypes.STRING,
+    columnName: 'first_name',   // stored as first_name in SQL
+  }
+}
+```
+
+When `underscored: true` is set on the model, Sequelize handles this mapping automatically for all attributes.
+
+## Syncing models to the database
+
+`sequelize.sync()` creates or updates tables to match your model definitions. This is convenient for development but should not be used in production — use migrations instead.
+
+```typescript
+// Create tables that don't exist yet (leaves existing tables alone)
+await sequelize.sync();
+
+// Drop and recreate all tables (destructive — development only)
+await sequelize.sync({ force: true });
+
+// ALTER existing tables to match the model (use with care)
+await sequelize.sync({ alter: true });
+```
+
+<Warning>
+Do not use `sync({ force: true })` or `sync({ alter: true })` against a production database. Use a migration tool such as [Umzug](https://github.com/sequelize/umzug) to manage schema changes safely.
+</Warning>
+
+## Full example
+
+The following shows a complete model definition using both approaches side by side.
+
+<Tabs>
+  <Tab title="Model.init()">
+    ```typescript
+    import {
+      Model,
+      InferAttributes,
+      InferCreationAttributes,
+      CreationOptional,
+      DataTypes,
+    } from '@sequelize/core';
+
+    class Post extends Model<
+      InferAttributes<Post>,
+      InferCreationAttributes<Post>
+    > {
+      declare id: CreationOptional<number>;
+      declare title: string;
+      declare body: string | null;
+      declare published: boolean;
+      declare authorId: number;
+      declare createdAt: CreationOptional<Date>;
+      declare updatedAt: CreationOptional<Date>;
+    }
+
+    Post.init(
+      {
+        id: {
+          type: DataTypes.INTEGER,
+          primaryKey: true,
+          autoIncrement: true,
+        },
+        title: {
+          type: DataTypes.STRING(255),
+          allowNull: false,
+        },
+        body: {
+          type: DataTypes.TEXT,
+          allowNull: true,
+        },
+        published: {
+          type: DataTypes.BOOLEAN,
+          allowNull: false,
+          defaultValue: false,
+        },
+        authorId: {
+          type: DataTypes.INTEGER,
+          allowNull: false,
+          columnName: 'author_id',
+        },
+      },
+      {
+        sequelize,
+        tableName: 'posts',
+        timestamps: true,
+        underscored: true,
+      },
+    );
+    ```
+  </Tab>
+  <Tab title="Decorators">
+    ```typescript
+    import {
+      Model,
+      InferAttributes,
+      InferCreationAttributes,
+      CreationOptional,
+      DataTypes,
+    } from '@sequelize/core';
+    import {
+      Attribute,
+      PrimaryKey,
+      AutoIncrement,
+      NotNull,
+      Default,
+      Table,
+    } from '@sequelize/core/decorators-legacy';
+
+    @Table({ tableName: 'posts', timestamps: true, underscored: true })
+    class Post extends Model<
+      InferAttributes<Post>,
+      InferCreationAttributes<Post>
+    > {
+      @Attribute(DataTypes.INTEGER)
+      @PrimaryKey
+      @AutoIncrement
+      declare id: CreationOptional<number>;
+
+      @Attribute(DataTypes.STRING(255))
+      @NotNull
+      declare title: string;
+
+      @Attribute(DataTypes.TEXT)
+      declare body: string | null;
+
+      @Attribute(DataTypes.BOOLEAN)
+      @NotNull
+      @Default(false)
+      declare published: CreationOptional<boolean>;
+
+      @Attribute({ type: DataTypes.INTEGER, columnName: 'author_id' })
+      @NotNull
+      declare authorId: number;
+
+      declare createdAt: CreationOptional<Date>;
+      declare updatedAt: CreationOptional<Date>;
+    }
+    ```
+  </Tab>
+</Tabs>

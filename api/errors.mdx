@@ -1,0 +1,556 @@
+---
+title: "Errors"
+description: "Error classes thrown by Sequelize"
+---
+
+Sequelize provides a hierarchy of custom error classes so you can handle specific failure modes precisely. All errors extend the native JavaScript `Error` class via `BaseError`.
+
+```typescript
+import {
+  ValidationError,
+  DatabaseError,
+  UniqueConstraintError,
+  // ...
+} from '@sequelize/core';
+```
+
+---
+
+## Error Hierarchy
+
+```
+Error
+└── BaseError
+    ├── ValidationError
+    │   ├── UniqueConstraintError
+    │   └── ValidationErrorItem  (not an Error subclass — see below)
+    ├── DatabaseError
+    │   ├── ExclusionConstraintError
+    │   ├── ForeignKeyConstraintError
+    │   ├── TimeoutError
+    │   └── UnknownConstraintError
+    ├── ConnectionError
+    │   ├── AccessDeniedError
+    │   ├── ConnectionAcquireTimeoutError
+    │   ├── ConnectionRefusedError
+    │   ├── ConnectionTimedOutError
+    │   ├── HostNotFoundError
+    │   ├── HostNotReachableError
+    │   └── InvalidConnectionError
+    ├── AggregateError
+    ├── AssociationError
+    ├── BulkRecordError
+    ├── EagerLoadingError
+    ├── EmptyResultError
+    ├── InstanceError
+    ├── OptimisticLockError
+    ├── QueryError
+    └── SequelizeScopeError
+```
+
+---
+
+## BaseError
+
+**`name`**: `'SequelizeBaseError'`
+
+The root class for all Sequelize errors. Extends the native JavaScript `Error`.
+
+```typescript
+import { BaseError } from '@sequelize/core';
+
+try {
+  await User.findAll();
+} catch (error) {
+  if (error instanceof BaseError) {
+    // any Sequelize error
+  }
+}
+```
+
+<ResponseField name="cause" type="Error | undefined">
+  The underlying error that triggered this Sequelize error, if any.
+</ResponseField>
+
+<Note>
+  The deprecated `parent` and `original` properties are aliases for `cause`. Use `cause` in new code.
+</Note>
+
+---
+
+## Validation Errors
+
+### ValidationError
+
+**`name`**: `'SequelizeValidationError'`
+
+Thrown when one or more model-level or attribute-level validators fail before a query is sent to the database. Also thrown by `instance.validate()`.
+
+```typescript
+try {
+  await user.save();
+} catch (error) {
+  if (error instanceof ValidationError) {
+    for (const item of error.errors) {
+      console.error(`${item.path}: ${item.message}`);
+    }
+  }
+}
+```
+
+<ResponseField name="errors" type="ValidationErrorItem[]">
+  Array of individual validation failure details.
+</ResponseField>
+
+**Methods:**
+
+- `error.get(path: string): ValidationErrorItem[]` — Returns all validation errors for the given attribute path.
+
+---
+
+### ValidationErrorItem
+
+An individual validation failure. **Not** a subclass of `Error`; instances are collected in `ValidationError.errors`.
+
+<ResponseField name="message" type="string">
+  Human-readable description of the failure.
+</ResponseField>
+
+<ResponseField name="type" type="string | null">
+  The type string: `'notNull violation'`, `'unique violation'`, or `'Validation error'`.
+</ResponseField>
+
+<ResponseField name="path" type="string | null">
+  The attribute name (field path) that failed validation.
+</ResponseField>
+
+<ResponseField name="value" type="unknown">
+  The value that caused the validation failure.
+</ResponseField>
+
+<ResponseField name="origin" type="'CORE' | 'DB' | 'FUNCTION' | 'DATATYPE' | null">
+  Where the validation originated: Sequelize core constraint (`CORE`), database constraint (`DB`), a validator function (`FUNCTION`), or data type validation (`DATATYPE`).
+</ResponseField>
+
+<ResponseField name="instance" type="Model | null">
+  The model instance that failed validation.
+</ResponseField>
+
+<ResponseField name="validatorKey" type="string | null">
+  The key identifying which validator failed (e.g. `'isEmail'`).
+</ResponseField>
+
+<ResponseField name="validatorName" type="string | null">
+  The name of the built-in validator function that failed.
+</ResponseField>
+
+<ResponseField name="validatorArgs" type="unknown[]">
+  Arguments passed to the built-in validator.
+</ResponseField>
+
+---
+
+### UniqueConstraintError
+
+**Extends:** `ValidationError`  
+**`name`**: `'SequelizeUniqueConstraintError'`
+
+Thrown when an `INSERT` or `UPDATE` violates a unique index or primary key constraint in the database.
+
+```typescript
+try {
+  await User.create({ email: 'duplicate@example.com' });
+} catch (error) {
+  if (error instanceof UniqueConstraintError) {
+    console.error('Duplicate value for fields:', error.fields);
+  }
+}
+```
+
+<ResponseField name="fields" type="Record<string, unknown>">
+  The column(s) and value(s) that caused the unique violation.
+</ResponseField>
+
+<ResponseField name="sql" type="string">
+  The SQL query that triggered the error.
+</ResponseField>
+
+<ResponseField name="errors" type="ValidationErrorItem[]">
+  Inherited from `ValidationError`. Contains one or more items describing each constraint violation.
+</ResponseField>
+
+---
+
+## Database Errors
+
+### DatabaseError
+
+**Extends:** `BaseError`  
+**`name`**: `'SequelizeDatabaseError'`
+
+Base class for all errors originating from the database engine. The original database error is available as `error.cause`.
+
+<ResponseField name="sql" type="string">
+  The SQL query that triggered the database error.
+</ResponseField>
+
+<ResponseField name="parameters" type="object">
+  The bind parameters used with the SQL query.
+</ResponseField>
+
+<ResponseField name="cause" type="DatabaseErrorParent">
+  The underlying driver error.
+</ResponseField>
+
+---
+
+### ForeignKeyConstraintError
+
+**Extends:** `DatabaseError`  
+**`name`**: `'SequelizeForeignKeyConstraintError'`
+
+Thrown when a foreign key constraint is violated — for example, inserting a row that references a non-existent parent, or deleting a parent that still has children.
+
+<ResponseField name="table" type="string | undefined">
+  The table on which the constraint is defined.
+</ResponseField>
+
+<ResponseField name="fields" type="Record<string, string> | undefined">
+  The field(s) involved in the constraint violation.
+</ResponseField>
+
+<ResponseField name="value" type="unknown">
+  The value that violated the constraint.
+</ResponseField>
+
+<ResponseField name="index" type="string | undefined">
+  The index or constraint name.
+</ResponseField>
+
+<ResponseField name="reltype" type="'parent' | 'child' | undefined">
+  Whether the violation was on the parent or child side of the relationship.
+</ResponseField>
+
+```typescript
+try {
+  await Post.destroy({ where: { id: 1 } });
+} catch (error) {
+  if (error instanceof ForeignKeyConstraintError) {
+    console.error('Cannot delete: child records still reference this row.');
+  }
+}
+```
+
+---
+
+### ExclusionConstraintError
+
+**Extends:** `DatabaseError`  
+**`name`**: `'SequelizeExclusionConstraintError'`
+
+Thrown when an exclusion constraint is violated. PostgreSQL only.
+
+<ResponseField name="constraint" type="string | undefined">
+  The name of the exclusion constraint.
+</ResponseField>
+
+<ResponseField name="fields" type="Record<string, string | number> | undefined">
+  The column values that caused the violation.
+</ResponseField>
+
+<ResponseField name="table" type="string | undefined">
+  The table the constraint is on.
+</ResponseField>
+
+---
+
+### TimeoutError
+
+**Extends:** `DatabaseError`  
+**`name`**: `'SequelizeTimeoutError'`
+
+Thrown when a database query times out.
+
+---
+
+### UnknownConstraintError
+
+**Extends:** `DatabaseError`  
+**`name`**: `'SequelizeUnknownConstraintError'`
+
+Thrown when Sequelize encounters a constraint error it cannot recognize or map to a more specific type.
+
+<ResponseField name="constraint" type="string | undefined">
+  The constraint name.
+</ResponseField>
+
+<ResponseField name="fields" type="Record<string, string | number> | undefined">
+  The involved columns.
+</ResponseField>
+
+<ResponseField name="table" type="string | undefined">
+  The table on which the constraint is defined.
+</ResponseField>
+
+---
+
+## Connection Errors
+
+All connection errors extend `ConnectionError`. The underlying driver error is accessible via `error.cause`.
+
+### ConnectionError
+
+**Extends:** `BaseError`  
+**`name`**: `'SequelizeConnectionError'`
+
+Base class for all connection-related errors.
+
+---
+
+### AccessDeniedError
+
+**Extends:** `ConnectionError`  
+**`name`**: `'SequelizeAccessDeniedError'`
+
+Thrown when the database server refuses the credentials provided (wrong username, password, or insufficient privileges).
+
+---
+
+### ConnectionRefusedError
+
+**Extends:** `ConnectionError`  
+**`name`**: `'SequelizeConnectionRefusedError'`
+
+Thrown when the database server actively refuses the connection — typically because the server is not running or is not listening on the specified port.
+
+---
+
+### ConnectionTimedOutError
+
+**Extends:** `ConnectionError`  
+**`name`**: `'SequelizeConnectionTimedOutError'`
+
+Thrown when the connection attempt to the database server times out.
+
+---
+
+### ConnectionAcquireTimeoutError
+
+**Extends:** `ConnectionError`  
+**`name`**: `'SequelizeConnectionAcquireTimeoutError'`
+
+Thrown when Sequelize cannot acquire a connection from the pool within the configured `pool.acquire` timeout. Indicates the pool is exhausted (all connections are busy).
+
+<Tip>
+  If you see this error frequently, increase `pool.max` or investigate slow queries that are holding connections for too long.
+</Tip>
+
+---
+
+### HostNotFoundError
+
+**Extends:** `ConnectionError`  
+**`name`**: `'SequelizeHostNotFoundError'`
+
+Thrown when the database host cannot be resolved via DNS.
+
+---
+
+### HostNotReachableError
+
+**Extends:** `ConnectionError`  
+**`name`**: `'SequelizeHostNotReachableError'`
+
+Thrown when the database host is found but cannot be reached — usually a network routing or firewall issue.
+
+---
+
+### InvalidConnectionError
+
+**Extends:** `ConnectionError`  
+**`name`**: `'SequelizeInvalidConnectionError'`
+
+Thrown when the connection parameters are invalid (e.g. an unsupported SSL mode or bad connection string).
+
+---
+
+## Other Errors
+
+### OptimisticLockError
+
+**Extends:** `BaseError`  
+**`name`**: `'SequelizeOptimisticLockError'`
+
+Thrown when a model uses the `version` attribute (optimistic locking) and a concurrent update has changed the row since it was last read.
+
+<ResponseField name="modelName" type="string | undefined">
+  The name of the model on which the stale update was attempted.
+</ResponseField>
+
+<ResponseField name="values" type="Record<string, unknown> | undefined">
+  The values that were being written.
+</ResponseField>
+
+<ResponseField name="where" type="Record<string, unknown> | undefined">
+  The WHERE conditions used for the update.
+</ResponseField>
+
+```typescript
+try {
+  await user.save();
+} catch (error) {
+  if (error instanceof OptimisticLockError) {
+    // Reload the instance and retry
+    await user.reload();
+  }
+}
+```
+
+---
+
+### EagerLoadingError
+
+**Extends:** `BaseError`  
+**`name`**: `'SequelizeEagerLoadingError'`
+
+Thrown when an `include` option is improperly configured — for example, referencing an association that doesn't exist, or passing conflicting options.
+
+---
+
+### EmptyResultError
+
+**Extends:** `BaseError`  
+**`name`**: `'SequelizeEmptyResultError'`
+
+Thrown when a query returns no results and the `rejectOnEmpty` option was set to `true`.
+
+```typescript
+const user = await User.findOne({
+  where: { id: 999 },
+  rejectOnEmpty: true,   // throws EmptyResultError instead of returning null
+});
+```
+
+---
+
+### AggregateError
+
+**Extends:** `BaseError`  
+**`name`**: `'AggregateError'`
+
+A container for multiple errors. Thrown by `bulkCreate` (with `validate: true`) when validation fails on multiple records simultaneously.
+
+<ResponseField name="errors" type="Array<AggregateError | Error>">
+  All of the individual errors that occurred.
+</ResponseField>
+
+```typescript
+try {
+  await User.bulkCreate([
+    { name: 'Alice', email: 'invalid' },
+    { name: '', email: 'bob@example.com' },
+  ], { validate: true });
+} catch (error) {
+  if (error instanceof AggregateError) {
+    for (const e of error.errors) {
+      console.error(e.message);
+    }
+  }
+}
+```
+
+---
+
+### BulkRecordError
+
+**Extends:** `BaseError`  
+**`name`**: `'SequelizeBulkRecordError'`
+
+Represents a per-record error within a bulk operation. Collected inside `AggregateError.errors`.
+
+<ResponseField name="errors" type="Error">
+  The error for this individual record.
+</ResponseField>
+
+<ResponseField name="record" type="Model">
+  The model instance that caused the error.
+</ResponseField>
+
+---
+
+### InstanceError
+
+**Extends:** `BaseError`
+
+Thrown when an instance-level operation is invalid — for example, calling `save()` on a model instance that has already been destroyed.
+
+---
+
+### AssociationError
+
+**Extends:** `BaseError`
+
+Thrown when an association is configured incorrectly (for example, defining a self-association without the required `as` and `inverse.as` options).
+
+---
+
+### QueryError
+
+**Extends:** `BaseError`
+
+Thrown for query construction or execution errors that don't fit a more specific category.
+
+---
+
+### SequelizeScopeError
+
+**Extends:** `BaseError`
+
+Thrown when `Model.scope()` is called with an undefined scope name or invalid scope configuration.
+
+---
+
+## Handling Errors
+
+```typescript
+import {
+  BaseError,
+  ValidationError,
+  UniqueConstraintError,
+  ForeignKeyConstraintError,
+  ConnectionError,
+  ConnectionAcquireTimeoutError,
+  OptimisticLockError,
+  EmptyResultError,
+} from '@sequelize/core';
+
+async function createUser(data: { email: string; name: string }) {
+  try {
+    return await User.create(data);
+  } catch (error) {
+    if (error instanceof UniqueConstraintError) {
+      // Handle duplicate email
+      throw new Error(`Email "${data.email}" is already taken.`);
+    }
+
+    if (error instanceof ValidationError) {
+      // Handle validation failures
+      const messages = error.errors.map(e => `${e.path}: ${e.message}`);
+      throw new Error(`Validation failed:\n${messages.join('\n')}`);
+    }
+
+    if (error instanceof ConnectionAcquireTimeoutError) {
+      // Pool exhausted — retry or return 503
+      throw new Error('Database is busy, please try again.');
+    }
+
+    if (error instanceof ConnectionError) {
+      // Any connection failure
+      throw new Error('Cannot connect to the database.');
+    }
+
+    // Re-throw unknown errors
+    throw error;
+  }
+}
+```

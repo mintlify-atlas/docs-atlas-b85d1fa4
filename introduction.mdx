@@ -1,0 +1,69 @@
+---
+title: "Introduction"
+description: "Sequelize is a feature-rich Node.js ORM for multiple SQL databases"
+---
+
+Sequelize is a promise-based Node.js ORM that supports PostgreSQL, MySQL, MariaDB, SQLite, Microsoft SQL Server, Oracle Database, Snowflake, DB2, and IBM i. It provides a high-level abstraction over SQL so you can interact with your database using JavaScript or TypeScript classes and methods rather than raw queries.
+
+## What Sequelize provides
+
+- **Model-based access** — define your tables as classes with typed attributes, and Sequelize handles the SQL
+- **Associations** — declare `hasOne`, `hasMany`, `belongsTo`, and `belongsToMany` relationships with automatic join handling
+- **Transactions** — full transaction support with automatic CLS (continuation-local storage) propagation
+- **Eager and lazy loading** — load associated records upfront with `include`, or on demand
+- **Migrations and sync** — evolve your schema with migration files or use `sequelize.sync()` for development
+- **Validation** — built-in attribute validators that run before every write
+- **Query builder** — chainable finders and operators for complex `WHERE` clauses without writing raw SQL
+- **Read replication** — route reads to replica servers while writes go to the primary
+- **Hooks** — lifecycle callbacks before and after every query, model operation, or connection event
+
+## Supported databases
+
+Each database is supported through a separate dialect package. Install `@sequelize/core` alongside the package for your database.
+
+| Database | Dialect package |
+|---|---|
+| PostgreSQL | `@sequelize/postgres` |
+| MySQL | `@sequelize/mysql` |
+| MariaDB | `@sequelize/mariadb` |
+| SQLite | `@sequelize/sqlite3` |
+| Microsoft SQL Server | `@sequelize/mssql` |
+| Oracle Database | `@sequelize/oracle` |
+| Snowflake | `@sequelize/snowflake` |
+| DB2 (Linux, Unix, Windows) | `@sequelize/db2` |
+| DB2 for IBM i | `@sequelize/db2-ibmi` |
+
+## TypeScript support
+
+Sequelize v7 is written in TypeScript and ships with complete type definitions. You can use `InferAttributes` and `InferCreationAttributes` to derive model attribute types directly from your class declaration, eliminating duplication between your class fields and the attribute types passed to generics.
+
+```typescript
+import { DataTypes, Model, Sequelize } from '@sequelize/core';
+import type { InferAttributes, InferCreationAttributes, CreationOptional } from '@sequelize/core';
+import { PostgresDialect } from '@sequelize/postgres';
+
+class User extends Model<InferAttributes<User>, InferCreationAttributes<User>> {
+  declare id: CreationOptional<number>;
+  declare name: string;
+}
+```
+
+## Versioning
+
+- **v6** is the current stable release. It is available as the `sequelize` package on npm.
+- **v7** (`@sequelize/core`) is in alpha. It introduces breaking changes including the dialect-class constructor, improved TypeScript, and per-dialect packages. These docs cover v7.
+
+<CardGroup cols={2}>
+  <Card title="Getting started" icon="rocket" href="/getting-started">
+    Install Sequelize and create your first database connection in minutes.
+  </Card>
+  <Card title="Supported dialects" icon="database" href="/dialects">
+    See setup instructions for each supported database.
+  </Card>
+  <Card title="Defining models" icon="table" href="/models/defining-models">
+    Learn how to map your database tables to Sequelize model classes.
+  </Card>
+  <Card title="GitHub" icon="github" href="https://github.com/sequelize/sequelize">
+    Browse the source code and open issues.
+  </Card>
+</CardGroup>

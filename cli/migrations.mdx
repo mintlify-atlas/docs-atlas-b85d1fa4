@@ -1,0 +1,350 @@
+---
+title: "Migrations"
+description: "Track and apply database schema changes with migrations"
+keywords: ["sequelize", "migrations", "schema", "queryInterface", "database"]
+---
+
+Migrations are versioned scripts that describe how your database schema should change over time. Each migration has an `up` function that applies the change and a `down` function that reverts it, letting you move forward and backward through your schema history in a controlled, repeatable way.
+
+## Why use migrations instead of `sequelize.sync()`
+
+`sequelize.sync()` inspects your model definitions and attempts to bring the database schema in line with them. This is convenient during early development but has significant drawbacks in production:
+
+- It cannot safely modify columns or rename tables without data loss.
+- It gives you no history of what changed, when, or why.
+- Rolling back a bad change requires manual intervention.
+- Running `sync({ force: true })` drops and recreates tables, destroying all data.
+
+Migrations solve these problems by treating every schema change as an explicit, reviewable, reversible commit to your database structure.
+
+<Warning>
+Avoid using `sequelize.sync()` in production. Use migrations to manage all schema changes on databases that hold real data.
+</Warning>
+
+## Generating a migration file
+
+Use the `migration generate` command to create a new timestamped migration file:
+
+```bash
+sequelize migration generate --format=typescript --name="create-users"
+```
+
+The CLI will create a file in your configured `migrationFolder` (default: `./migrations`). The filename includes a timestamp prefix so that migrations are applied in creation order:
+
+```
+migrations/
+└── 20240315143022-create-users.ts
+```
+
+For the `sql` format, a directory is created instead of a single file, containing two SQL files:
+
+```
+migrations/
+└── 20240315143022-create-users/
+    ├── up.sql
+    └── down.sql
+```
+
+<Tip>
+Run `sequelize migration generate --no-interactive --format=typescript --name="..."` in CI or scripts to skip interactive prompts.
+</Tip>
+
+## Migration file structure
+
+A generated TypeScript migration file looks like this:
+
+```typescript 20240315143022-create-users.ts
+import { AbstractQueryInterface, Sequelize } from '@sequelize/core';
+
+export async function up(
+  queryInterface: AbstractQueryInterface,
+  sequelize: Sequelize,
+): Promise<void> {
+  // Apply the schema change here
+  await queryInterface.createTable('users', {
+    id: {
+      type: sequelize.dialect.DataTypes.INTEGER,
+      primaryKey: true,
+      autoIncrement: true,
+    },
+    name: {
+      type: sequelize.dialect.DataTypes.STRING,
+      allowNull: false,
+    },
+    email: {
+      type: sequelize.dialect.DataTypes.STRING,
+      allowNull: false,
+      unique: true,
+    },
+    createdAt: {
+      type: sequelize.dialect.DataTypes.DATE,
+      allowNull: false,
+    },
+    updatedAt: {
+      type: sequelize.dialect.DataTypes.DATE,
+      allowNull: false,
+    },
+  });
+}
+
+export async function down(
+  queryInterface: AbstractQueryInterface,
+  sequelize: Sequelize,
+): Promise<void> {
+  // Revert the change made in `up`
+  await queryInterface.dropTable('users');
+}
+```
+
+The same file is available in ESM and CJS flavours:
+
+<CodeGroup>
+
+```javascript ESM (.mjs)
+/** @type {import('@sequelize/cli').MigrationFunction} */
+export async function up(queryInterface, sequelize) {
+  await queryInterface.createTable('users', {
+    id: { type: sequelize.dialect.DataTypes.INTEGER, primaryKey: true, autoIncrement: true },
+    name: { type: sequelize.dialect.DataTypes.STRING, allowNull: false },
+    email: { type: sequelize.dialect.DataTypes.STRING, allowNull: false, unique: true },
+    createdAt: { type: sequelize.dialect.DataTypes.DATE, allowNull: false },
+    updatedAt: { type: sequelize.dialect.DataTypes.DATE, allowNull: false },
+  });
+}
+
+/** @type {import('@sequelize/cli').MigrationFunction} */
+export async function down(queryInterface, sequelize) {
+  await queryInterface.dropTable('users');
+}
+```
+
+```javascript CJS (.cjs)
+'use strict';
+
+module.exports = {
+  /** @type {import('@sequelize/cli').MigrationFunction} */
+  async up(queryInterface, sequelize) {
+    await queryInterface.createTable('users', {
+      id: { type: sequelize.dialect.DataTypes.INTEGER, primaryKey: true, autoIncrement: true },
+      name: { type: sequelize.dialect.DataTypes.STRING, allowNull: false },
+      email: { type: sequelize.dialect.DataTypes.STRING, allowNull: false, unique: true },
+      createdAt: { type: sequelize.dialect.DataTypes.DATE, allowNull: false },
+      updatedAt: { type: sequelize.dialect.DataTypes.DATE, allowNull: false },
+    });
+  },
+
+  /** @type {import('@sequelize/cli').MigrationFunction} */
+  async down(queryInterface, sequelize) {
+    await queryInterface.dropTable('users');
+  },
+};
+```
+
+</CodeGroup>
+
+## Common migration operations
+
+`queryInterface` exposes the full set of DDL operations supported by Sequelize. The examples below cover the operations you will use most often.
+
+<Note>
+In migration files, import `DataTypes` from `@sequelize/core` or use `sequelize.dialect.DataTypes` (the `sequelize` parameter passed to `up`/`down`). The snippets below use the import form for brevity.
+</Note>
+
+### Create a table
+
+```typescript
+import { DataTypes } from '@sequelize/core';
+
+await queryInterface.createTable('posts', {
+  id: {
+    type: DataTypes.INTEGER,
+    primaryKey: true,
+    autoIncrement: true,
+  },
+  title: {
+    type: DataTypes.STRING(255),
+    allowNull: false,
+  },
+  body: {
+    type: DataTypes.TEXT,
+    allowNull: true,
+  },
+  authorId: {
+    type: DataTypes.INTEGER,
+    allowNull: false,
+    references: { model: 'users', key: 'id' },
+    onDelete: 'CASCADE',
+  },
+  createdAt: { type: DataTypes.DATE, allowNull: false },
+  updatedAt: { type: DataTypes.DATE, allowNull: false },
+});
+```
+
+### Add a column
+
+```typescript
+await queryInterface.addColumn('users', 'emailVerifiedAt', {
+  type: DataTypes.DATE,
+  allowNull: true,
+  after: 'email', // supported on MySQL/MariaDB; ignored on other dialects
+});
+```
+
+### Remove a column
+
+```typescript
+await queryInterface.removeColumn('users', 'emailVerifiedAt');
+```
+
+### Add an index
+
+```typescript
+// Simple index
+await queryInterface.addIndex('users', ['email']);
+
+// Named unique index
+await queryInterface.addIndex('users', ['email'], {
+  name: 'users_email_unique',
+  unique: true,
+});
+
+// Composite index
+await queryInterface.addIndex('posts', ['authorId', 'createdAt'], {
+  name: 'posts_author_created_at',
+});
+```
+
+### Remove an index
+
+```typescript
+await queryInterface.removeIndex('users', 'users_email_unique');
+```
+
+### Rename a table
+
+```typescript
+export async function up(queryInterface) {
+  await queryInterface.renameTable('blogposts', 'posts');
+}
+
+export async function down(queryInterface) {
+  await queryInterface.renameTable('posts', 'blogposts');
+}
+```
+
+### Change a column type or attributes
+
+```typescript
+await queryInterface.changeColumn('users', 'name', {
+  type: DataTypes.STRING(512),
+  allowNull: false,
+});
+```
+
+### Rename a column
+
+```typescript
+await queryInterface.renameColumn('users', 'userName', 'name');
+```
+
+## The migrations tracking table
+
+Sequelize tracks which migrations have been applied in a table called `SequelizeMeta` (created automatically on first run). Each row stores the filename of a migration that has been successfully executed.
+
+```
+SequelizeMeta
+┌─────────────────────────────────────────┐
+│ name                                    │
+├─────────────────────────────────────────┤
+│ 20240101000000-create-users.ts          │
+│ 20240201000000-add-email-verified-at.ts │
+└─────────────────────────────────────────┘
+```
+
+When you run migrations, Sequelize reads all files in your `migrationFolder`, compares them against `SequelizeMeta`, and runs only the ones that are not yet recorded. This ensures migrations are never applied twice.
+
+<Note>
+Do not modify or delete rows from `SequelizeMeta` manually. If you need to re-run a migration, revert it first using the appropriate down path.
+</Note>
+
+## Best practices
+
+### Always write a `down` migration
+
+Every `up` must have a corresponding `down` that fully reverts the change. Without it, you cannot roll back to a previous state when something goes wrong.
+
+```typescript
+export async function up(queryInterface) {
+  await queryInterface.addColumn('users', 'avatarUrl', {
+    type: DataTypes.STRING,
+    allowNull: true,
+  });
+}
+
+// Without this, you cannot undo the migration
+export async function down(queryInterface) {
+  await queryInterface.removeColumn('users', 'avatarUrl');
+}
+```
+
+### Wrap migrations in transactions
+
+Wrapping your migration in a transaction ensures that if any step fails, all previous steps in that migration are rolled back automatically, leaving the database in its prior consistent state.
+
+```typescript
+export async function up(queryInterface, sequelize) {
+  const transaction = await sequelize.startUnmanagedTransaction();
+  try {
+    await queryInterface.createTable('roles', {
+      id: { type: DataTypes.INTEGER, primaryKey: true, autoIncrement: true },
+      name: { type: DataTypes.STRING, allowNull: false, unique: true },
+    }, { transaction });
+
+    await queryInterface.addColumn('users', 'roleId', {
+      type: DataTypes.INTEGER,
+      allowNull: true,
+      references: { model: 'roles', key: 'id' },
+    }, { transaction });
+
+    await transaction.commit();
+  } catch (error) {
+    await transaction.rollback();
+    throw error;
+  }
+}
+
+export async function down(queryInterface, sequelize) {
+  const transaction = await sequelize.startUnmanagedTransaction();
+  try {
+    await queryInterface.removeColumn('users', 'roleId', { transaction });
+    await queryInterface.dropTable('roles', { transaction });
+    await transaction.commit();
+  } catch (error) {
+    await transaction.rollback();
+    throw error;
+  }
+}
+```
+
+<Warning>
+Not all databases support DDL statements inside transactions. PostgreSQL does; MySQL and MariaDB do not roll back DDL changes on error. Check your database's documentation.
+</Warning>
+
+### Keep migrations small and focused
+
+Each migration should do one logical thing — create a table, add a column, or add an index. Smaller migrations are easier to review, easier to roll back, and less likely to cause conflicts when multiple developers are working in parallel.
+
+### Never modify an existing migration
+
+Once a migration has been applied to any environment (staging, production), treat it as immutable. Create a new migration to make further changes. Modifying a migration that has already run will cause a mismatch between the `SequelizeMeta` record and the actual database state.
+
+## See also
+
+<CardGroup cols={2}>
+  <Card title="CLI overview" icon="terminal" href="/cli/overview">
+    Installation, configuration, and all available CLI commands.
+  </Card>
+  <Card title="Seeders" icon="database" href="/cli/seeders">
+    Populate your database with initial or test data using seed files.
+  </Card>
+</CardGroup>

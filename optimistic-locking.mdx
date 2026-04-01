@@ -1,0 +1,216 @@
+---
+title: "Optimistic Locking"
+description: "Prevent lost updates using version numbers"
+---
+
+Optimistic locking is a concurrency control strategy that prevents two processes from overwriting each other's changes without holding a database lock for the entire duration of the operation. Instead of locking a row when reading it, you stamp each row with a version number and check that the version has not changed when writing.
+
+## Optimistic vs pessimistic locking
+
+<Tabs>
+  <Tab title="Optimistic locking">
+    - No database lock is held during the read-modify-write cycle.
+    - Low contention — suitable when conflicts are rare.
+    - A conflict throws an `OptimisticLockError` at save time; your code must decide whether to retry or give up.
+    - Implemented in Sequelize via a `version` column on the model.
+  </Tab>
+  <Tab title="Pessimistic locking">
+    - Acquires a `SELECT ... FOR UPDATE` lock on rows when reading.
+    - Guarantees no other transaction can modify the row until the lock is released.
+    - Higher contention — suitable when conflicts are common or you cannot tolerate retries.
+    - Implemented via the `lock` option on `findOne` / `findAll` inside a transaction.
+  </Tab>
+</Tabs>
+
+Use optimistic locking when:
+- Conflicts are infrequent and you want to avoid the overhead of database row locks.
+- You are building a long-running edit workflow (load a record, user fills a form, save).
+- You can safely retry the operation on conflict.
+
+## Enabling optimistic locking
+
+Add `version: true` to `Model.init()`. Sequelize creates a `version` integer column (default column name: `version`) and manages it automatically.
+
+```typescript
+import { Model, DataTypes } from '@sequelize/core';
+
+class Article extends Model {
+  declare id: number;
+  declare title: string;
+  declare body: string;
+  declare version: number;
+}
+
+Article.init(
+  {
+    id: { type: DataTypes.INTEGER, primaryKey: true, autoIncrement: true },
+    title: DataTypes.STRING,
+    body: DataTypes.TEXT,
+  },
+  {
+    sequelize,
+    version: true, // adds a `version` integer column, defaults to 0
+  },
+);
+```
+
+## Custom version column name
+
+Pass a string instead of `true` to use a different column name:
+
+```typescript
+Article.init(
+  { /* attributes */ },
+  {
+    sequelize,
+    version: 'lockVersion', // column is named `lock_version` (or `lockVersion` if underscored is false)
+  },
+);
+```
+
+## How it works
+
+<Steps>
+  <Step title="Row created">
+    When a row is inserted, Sequelize sets `version = 0`.
+  </Step>
+  <Step title="Row loaded">
+    When you call `findOne` or `findByPk`, the `version` value is included in the result and stored on the instance.
+  </Step>
+  <Step title="Instance modified">
+    You change attributes on the instance in memory. The `version` value is unchanged at this point.
+  </Step>
+  <Step title="Instance saved">
+    When you call `instance.save()`, Sequelize generates:
+
+    ```sql
+    UPDATE articles
+    SET title = ?, body = ?, version = version + 1
+    WHERE id = ? AND version = ?
+    ```
+
+    The `WHERE` clause includes the version the instance was loaded with. If another process already incremented the version, zero rows are updated and Sequelize throws `OptimisticLockError`.
+  </Step>
+</Steps>
+
+## The `OptimisticLockError`
+
+When a save fails due to a version conflict, Sequelize throws an `OptimisticLockError`:
+
+```typescript
+import { OptimisticLockError } from '@sequelize/core';
+
+try {
+  await article.save();
+} catch (err) {
+  if (err instanceof OptimisticLockError) {
+    console.error('Conflict on model:', err.modelName);
+    console.error('Attempted values:', err.values);
+    console.error('WHERE clause used:', err.where);
+    // Handle conflict — retry or surface to the user
+  }
+}
+```
+
+The error carries three properties:
+
+| Property | Type | Description |
+|---|---|---|
+| `modelName` | `string` | The name of the model that triggered the conflict |
+| `values` | `Record<string, unknown>` | The attribute values that were being saved |
+| `where` | `Record<string, unknown>` | The `WHERE` clause that matched zero rows |
+
+## Handling conflicts — retry pattern
+
+The safest way to handle an `OptimisticLockError` is to reload the latest version of the record and reapply your changes:
+
+```typescript
+import { OptimisticLockError } from '@sequelize/core';
+
+async function incrementViewCount(articleId: number, maxRetries = 3): Promise<void> {
+  for (let attempt = 0; attempt < maxRetries; attempt++) {
+    try {
+      const article = await Article.findByPk(articleId);
+      if (!article) throw new Error('Article not found');
+
+      article.views += 1;
+      await article.save();
+      return; // success
+    } catch (err) {
+      if (err instanceof OptimisticLockError && attempt < maxRetries - 1) {
+        // Another process updated the row — reload and retry
+        continue;
+      }
+      throw err;
+    }
+  }
+}
+```
+
+<Warning>
+  Retrying blindly can cause starvation under high contention. If conflicts happen frequently, consider switching to pessimistic locking (`SELECT ... FOR UPDATE`) inside a transaction instead.
+</Warning>
+
+## Practical example: concurrent counter
+
+The following example simulates two processes reading and updating the same row concurrently. Without optimistic locking, the second write would silently overwrite the first (a "lost update"). With optimistic locking, the second write throws and can be retried.
+
+```typescript
+import { Article } from './models/article';
+import { OptimisticLockError } from '@sequelize/core';
+
+// Seed a row
+const article = await Article.create({ title: 'Hello', views: 0 });
+
+// Simulate two concurrent reads
+const [instanceA, instanceB] = await Promise.all([
+  Article.findByPk(article.id),
+  Article.findByPk(article.id),
+]);
+
+// Both increment independently
+instanceA!.views += 1; // views = 1 (based on version 0)
+instanceB!.views += 10; // views = 10 (also based on version 0)
+
+// First write succeeds — version becomes 1
+await instanceA!.save();
+console.log('instanceA saved, version is now', instanceA!.version); // 1
+
+// Second write throws — version 0 no longer matches the current version 1
+try {
+  await instanceB!.save();
+} catch (err) {
+  if (err instanceof OptimisticLockError) {
+    console.error('Conflict! Reloading and retrying...');
+
+    // Reload the fresh row and reapply the change
+    await instanceB!.reload();
+    instanceB!.views += 10;
+    await instanceB!.save();
+    console.log('Retry succeeded, final views:', instanceB!.views); // 11
+  }
+}
+```
+
+## Opting out of version checking on individual saves
+
+You can bypass the version check on a specific save by passing `{ noVersionCheck: true }` — but do so only when you have an explicit reason, such as an admin override that intentionally discards concurrent changes.
+
+```typescript
+// Force-save without checking the version (use carefully)
+await article.save({ fields: ['title'] });
+// version checking still applies for normal saves
+```
+
+<Note>
+  The version column is managed entirely by Sequelize. Do not set it manually unless you fully understand the implications. Setting the wrong version will cause immediate `OptimisticLockError` on the next save.
+</Note>
+
+<CardGroup cols={2}>
+  <Card title="Transactions" icon="arrows-rotate" href="/transactions">
+    Use pessimistic locking with `SELECT ... FOR UPDATE` inside a transaction.
+  </Card>
+  <Card title="Hooks" icon="bolt" href="/hooks">
+    Execute logic before and after save operations.
+  </Card>
+</CardGroup>

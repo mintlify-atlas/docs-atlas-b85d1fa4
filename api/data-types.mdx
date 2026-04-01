@@ -1,0 +1,593 @@
+---
+title: "DataTypes Reference"
+description: "Complete reference for all Sequelize data types"
+---
+
+Sequelize provides a rich set of data types that map to SQL column types. Import them from the `DataTypes` namespace:
+
+```typescript
+import { DataTypes } from '@sequelize/core';
+```
+
+Data types can be used with or without `new`:
+
+```typescript
+// Both are equivalent
+DataTypes.STRING(255)
+new DataTypes.STRING(255)
+```
+
+<Note>
+  Not all data types are supported by every dialect. Sequelize will throw at model definition time if you use an unsupported type. Some types fall back gracefully (e.g. `STRING` uses a `CHECK` constraint if the database doesn't support length-limited varchar).
+</Note>
+
+---
+
+## String Types
+
+### DataTypes.STRING
+
+Variable-length string. Maps to `VARCHAR(n)`.
+
+```typescript
+DataTypes.STRING          // VARCHAR(255)
+DataTypes.STRING(100)     // VARCHAR(100)
+DataTypes.STRING.BINARY   // VARCHAR(255) BINARY
+DataTypes.STRING({ length: 100, binary: true })
+```
+
+<ParamField body="length" type="number" default="255">
+  Maximum character length.
+</ParamField>
+<ParamField body="binary" type="boolean" default="false">
+  Store as binary (case-sensitive byte comparison). Dialect support varies.
+</ParamField>
+
+---
+
+### DataTypes.CHAR
+
+Fixed-length string. Maps to `CHAR(n)`. Pads shorter values with spaces.
+
+```typescript
+DataTypes.CHAR        // CHAR(255)
+DataTypes.CHAR(10)    // CHAR(10)
+```
+
+<ParamField body="length" type="number" default="255">
+  Fixed character length.
+</ParamField>
+
+---
+
+### DataTypes.TEXT
+
+Unlimited-length text. Maps to `TEXT`, `TINYTEXT`, `MEDIUMTEXT`, or `LONGTEXT`.
+
+```typescript
+DataTypes.TEXT            // TEXT
+DataTypes.TEXT('tiny')    // TINYTEXT
+DataTypes.TEXT('medium')  // MEDIUMTEXT
+DataTypes.TEXT('long')    // LONGTEXT
+```
+
+<ParamField body="length" type="'tiny' | 'medium' | 'long'">
+  Controls the SQL text variant. Omit for the default `TEXT` type.
+</ParamField>
+
+---
+
+### DataTypes.CITEXT
+
+Case-insensitive text. Preserves original case but compares case-insensitively. PostgreSQL and SQLite only.
+
+```typescript
+DataTypes.CITEXT   // CITEXT
+```
+
+---
+
+## Integer Types
+
+All integer types accept `unsigned` and `zerofill` options and expose `.UNSIGNED` and `.ZEROFILL` convenience getters.
+
+### DataTypes.TINYINT
+
+1-byte signed integer. Maps to `TINYINT`. Range: -128 to 127 (0–255 unsigned).
+
+```typescript
+DataTypes.TINYINT
+DataTypes.TINYINT.UNSIGNED
+```
+
+---
+
+### DataTypes.SMALLINT
+
+2-byte signed integer. Maps to `SMALLINT`. Range: -32,768 to 32,767.
+
+```typescript
+DataTypes.SMALLINT
+DataTypes.SMALLINT.UNSIGNED
+```
+
+---
+
+### DataTypes.MEDIUMINT
+
+3-byte signed integer. Maps to `MEDIUMINT`. MySQL/MariaDB only. Range: -8,388,608 to 8,388,607.
+
+```typescript
+DataTypes.MEDIUMINT
+```
+
+---
+
+### DataTypes.INTEGER
+
+4-byte signed integer. Maps to `INTEGER` / `INT`. Range: -2,147,483,648 to 2,147,483,647.
+
+```typescript
+DataTypes.INTEGER
+DataTypes.INTEGER.UNSIGNED
+DataTypes.INTEGER({ unsigned: true, zerofill: true })
+```
+
+<ParamField body="unsigned" type="boolean" default="false">
+  Store as unsigned integer.
+</ParamField>
+<ParamField body="zerofill" type="boolean" default="false">
+  Zero-pad values (MySQL/MariaDB).
+</ParamField>
+
+---
+
+### DataTypes.BIGINT
+
+8-byte signed integer. Maps to `BIGINT`. Values are returned as JavaScript strings to avoid precision loss.
+
+```typescript
+DataTypes.BIGINT
+DataTypes.BIGINT.UNSIGNED
+```
+
+<Warning>
+  JavaScript's `number` type cannot safely represent all 64-bit integers. Sequelize returns `BIGINT` values as strings. Use JavaScript `BigInt` or parse as needed.
+</Warning>
+
+---
+
+## Floating-Point Types
+
+### DataTypes.FLOAT
+
+Single-precision 4-byte float. Maps to `FLOAT`. Accepts `number`, `bigint`, `boolean`, or a numeric string.
+
+```typescript
+DataTypes.FLOAT
+DataTypes.FLOAT.UNSIGNED
+```
+
+---
+
+### DataTypes.REAL
+
+Single-precision float. Maps to `REAL`. Behavior may vary by dialect.
+
+```typescript
+DataTypes.REAL
+```
+
+---
+
+### DataTypes.DOUBLE
+
+Double-precision 8-byte float. Maps to `DOUBLE PRECISION`.
+
+```typescript
+DataTypes.DOUBLE
+DataTypes.DOUBLE.UNSIGNED
+```
+
+---
+
+### DataTypes.DECIMAL
+
+Arbitrary-precision fixed-point number. Maps to `DECIMAL(precision, scale)`.
+
+```typescript
+DataTypes.DECIMAL           // DECIMAL
+DataTypes.DECIMAL(10, 2)    // DECIMAL(10,2) — 10 total digits, 2 after decimal
+DataTypes.DECIMAL({ precision: 10, scale: 2 })
+```
+
+<ParamField body="precision" type="number">
+  Total number of significant digits.
+</ParamField>
+<ParamField body="scale" type="number">
+  Number of digits after the decimal point. Required if `precision` is set.
+</ParamField>
+
+---
+
+## Boolean
+
+### DataTypes.BOOLEAN
+
+Boolean true/false. Maps to `BOOLEAN`, `TINYINT(1)`, or `BIT` depending on the dialect.
+
+```typescript
+DataTypes.BOOLEAN
+```
+
+---
+
+## Date & Time Types
+
+### DataTypes.DATE
+
+Date with time. Maps to `DATETIME` or `TIMESTAMP WITH TIME ZONE`.
+
+```typescript
+DataTypes.DATE      // DATETIME
+DataTypes.DATE(3)   // DATETIME(3) — millisecond precision
+DataTypes.DATE({ precision: 6 })
+```
+
+<ParamField body="precision" type="number">
+  Fractional seconds precision (0–6). Defaults to the Sequelize instance's `defaultTimestampPrecision` setting (6).
+</ParamField>
+
+---
+
+### DataTypes.DATEONLY
+
+Date without time. Maps to `DATE`.
+
+```typescript
+DataTypes.DATEONLY   // DATE
+```
+
+---
+
+### DataTypes.TIME
+
+Time without date. Maps to `TIME`.
+
+```typescript
+DataTypes.TIME        // TIME
+DataTypes.TIME(3)     // TIME(3) — fractional precision
+```
+
+---
+
+### DataTypes.NOW
+
+A default value marker — resolves to the current timestamp when a row is inserted. Not a column type; use as a `defaultValue`.
+
+```typescript
+{
+  createdAt: {
+    type: DataTypes.DATE,
+    defaultValue: DataTypes.NOW,
+  }
+}
+```
+
+---
+
+## Binary Types
+
+### DataTypes.BLOB
+
+Binary large object. Maps to `BLOB`, `TINYBLOB`, `MEDIUMBLOB`, or `LONGBLOB`.
+
+```typescript
+DataTypes.BLOB           // BLOB
+DataTypes.BLOB('tiny')   // TINYBLOB
+DataTypes.BLOB('medium') // MEDIUMBLOB
+DataTypes.BLOB('long')   // LONGBLOB
+```
+
+<ParamField body="length" type="'tiny' | 'medium' | 'long'">
+  Controls the SQL blob variant.
+</ParamField>
+
+---
+
+## UUID Types
+
+### DataTypes.UUID
+
+Stores a UUID string in the most appropriate native column type (e.g. `UUID` in PostgreSQL, `CHAR(36)` in MySQL). Does not generate values — pair with `defaultValue`.
+
+```typescript
+{
+  id: {
+    type: DataTypes.UUID,
+    defaultValue: DataTypes.UUIDV4,
+    primaryKey: true,
+  }
+}
+```
+
+---
+
+### DataTypes.UUIDV1
+
+A default value generator that produces v1 (time-based) UUIDs. Use as `defaultValue` alongside `DataTypes.UUID`.
+
+```typescript
+DataTypes.UUIDV1   // generates a v1 UUID as default
+```
+
+---
+
+### DataTypes.UUIDV4
+
+A default value generator that produces v4 (random) UUIDs. Use as `defaultValue` alongside `DataTypes.UUID`.
+
+```typescript
+DataTypes.UUIDV4   // generates a v4 UUID as default
+```
+
+---
+
+## JSON Types
+
+### DataTypes.JSON
+
+Stores and retrieves JSON. Sequelize serializes JavaScript objects to JSON strings on write and parses them on read. Supported in most dialects (stored as TEXT where no native JSON type exists).
+
+```typescript
+DataTypes.JSON
+```
+
+---
+
+### DataTypes.JSONB
+
+Binary JSON with indexing support. PostgreSQL only. Stores JSON in a decomposed binary format that allows efficient indexing and querying.
+
+```typescript
+DataTypes.JSONB
+```
+
+<Tip>
+  Prefer `JSONB` over `JSON` in PostgreSQL for better query performance and index support.
+</Tip>
+
+---
+
+## PostgreSQL-Specific Types
+
+### DataTypes.HSTORE
+
+Key-value store. Maps to `HSTORE`. PostgreSQL only.
+
+```typescript
+DataTypes.HSTORE
+// Accepts: { key: 'value', foo: 'bar' }
+```
+
+---
+
+### DataTypes.ARRAY
+
+PostgreSQL array column. Wraps another data type.
+
+```typescript
+DataTypes.ARRAY(DataTypes.STRING)    // VARCHAR(255)[]
+DataTypes.ARRAY(DataTypes.INTEGER)   // INTEGER[]
+DataTypes.ARRAY(DataTypes.TEXT)      // TEXT[]
+```
+
+<ParamField body="type" type="DataType" required>
+  The element type of the array.
+</ParamField>
+
+---
+
+### DataTypes.RANGE
+
+PostgreSQL range type. Stores a range of values.
+
+```typescript
+DataTypes.RANGE(DataTypes.INTEGER)    // int4range
+DataTypes.RANGE(DataTypes.BIGINT)     // int8range
+DataTypes.RANGE(DataTypes.DECIMAL)    // numrange
+DataTypes.RANGE(DataTypes.DATE)       // tstzrange
+DataTypes.RANGE(DataTypes.DATEONLY)   // daterange
+```
+
+Values are represented as `[lower, upper]` tuples. Range parts can be `{ value, inclusive: boolean }`.
+
+---
+
+### DataTypes.CIDR
+
+IPv4 or IPv6 network address. PostgreSQL only. Maps to `CIDR`.
+
+```typescript
+DataTypes.CIDR
+// Accepts: '192.168.0.0/24'
+```
+
+---
+
+### DataTypes.INET
+
+IPv4 or IPv6 host address with optional subnet mask. PostgreSQL only. Maps to `INET`.
+
+```typescript
+DataTypes.INET
+// Accepts: '192.168.0.1'
+```
+
+---
+
+### DataTypes.MACADDR
+
+MAC address. PostgreSQL only. Maps to `MACADDR`.
+
+```typescript
+DataTypes.MACADDR
+// Accepts: '12:34:56:78:9a:bc'
+```
+
+---
+
+### DataTypes.MACADDR8
+
+8-byte MAC address (EUI-64). PostgreSQL only. Maps to `MACADDR8`.
+
+```typescript
+DataTypes.MACADDR8
+```
+
+---
+
+### DataTypes.TSVECTOR
+
+Full-text search vector. PostgreSQL only. Maps to `TSVECTOR`. Typically generated from other columns.
+
+```typescript
+DataTypes.TSVECTOR
+```
+
+---
+
+## Spatial Types
+
+### DataTypes.GEOMETRY
+
+Stores geometric objects (points, lines, polygons). Requires PostGIS for PostgreSQL or uses native geometry support in MySQL/MariaDB.
+
+```typescript
+DataTypes.GEOMETRY               // Any geometry type
+DataTypes.GEOMETRY('POINT')      // Point only
+DataTypes.GEOMETRY('POINT', 4326) // Point with SRID
+```
+
+<ParamField body="type" type="GeoJsonType">
+  Restrict to a specific geometry type: `'POINT'`, `'LINESTRING'`, `'POLYGON'`, `'MULTIPOINT'`, `'MULTILINESTRING'`, `'MULTIPOLYGON'`, `'GEOMETRYCOLLECTION'`.
+</ParamField>
+<ParamField body="srid" type="number">
+  Spatial Reference Identifier.
+</ParamField>
+
+Values follow the GeoJSON format:
+
+```typescript
+{ type: 'Point', coordinates: [125.6, 10.1] }
+```
+
+---
+
+### DataTypes.GEOGRAPHY
+
+Geodetic geography objects using spherical coordinates. PostGIS for PostgreSQL only.
+
+```typescript
+DataTypes.GEOGRAPHY               // Any geography type
+DataTypes.GEOGRAPHY('POINT', 4326)
+```
+
+---
+
+## Other Types
+
+### DataTypes.ENUM
+
+Enumerated type. Restricts a column to a fixed set of string values.
+
+```typescript
+DataTypes.ENUM('active', 'inactive', 'pending')
+DataTypes.ENUM({ values: ['admin', 'user', 'guest'] })
+```
+
+<ParamField body="values" type="string[]" required>
+  The allowed string values. Must be provided at definition time.
+</ParamField>
+
+```typescript
+status: {
+  type: DataTypes.ENUM('active', 'inactive'),
+  defaultValue: 'active',
+}
+```
+
+---
+
+### DataTypes.VIRTUAL
+
+A virtual attribute that is not persisted to the database. Useful for computed properties or attributes that combine other fields.
+
+```typescript
+DataTypes.VIRTUAL                  // No SQL type; returns JavaScript value
+DataTypes.VIRTUAL(DataTypes.STRING, ['firstName', 'lastName'])
+```
+
+<ParamField body="returnType" type="DataType">
+  The data type of the virtual attribute's return value.
+</ParamField>
+<ParamField body="fields" type="string[]">
+  Attribute names this virtual depends on (used when selecting). If specified, those fields are always fetched when this virtual is requested.
+</ParamField>
+
+```typescript
+fullName: {
+  type: DataTypes.VIRTUAL(DataTypes.STRING, ['firstName', 'lastName']),
+  get() {
+    return `${this.firstName} ${this.lastName}`;
+  },
+}
+```
+
+---
+
+## Complete Example
+
+```typescript
+import { Model, DataTypes, InferAttributes, InferCreationAttributes } from '@sequelize/core';
+
+class Product extends Model<InferAttributes<Product>, InferCreationAttributes<Product>> {
+  declare id: string;
+  declare name: string;
+  declare description: string | null;
+  declare price: string; // DECIMAL returned as string
+  declare stock: number;
+  declare active: boolean;
+  declare tags: string[];
+  declare metadata: Record<string, unknown>;
+  declare createdAt: Date;
+}
+
+Product.init({
+  id: {
+    type: DataTypes.UUID,
+    defaultValue: DataTypes.UUIDV4,
+    primaryKey: true,
+  },
+  name: {
+    type: DataTypes.STRING(200),
+    allowNull: false,
+  },
+  description: DataTypes.TEXT,
+  price: {
+    type: DataTypes.DECIMAL(10, 2),
+    allowNull: false,
+  },
+  stock: {
+    type: DataTypes.INTEGER.UNSIGNED,
+    defaultValue: 0,
+  },
+  active: {
+    type: DataTypes.BOOLEAN,
+    defaultValue: true,
+  },
+  tags: DataTypes.ARRAY(DataTypes.STRING), // PostgreSQL only
+  metadata: DataTypes.JSONB,               // PostgreSQL only
+  createdAt: DataTypes.DATE,
+}, { sequelize, tableName: 'products' });
+```

@@ -1,0 +1,161 @@
+---
+title: "Sequelize CLI"
+description: "Use the Sequelize CLI to manage migrations and seeders"
+keywords: ["sequelize", "cli", "migrations", "seeders", "database"]
+---
+
+The `@sequelize/cli` package provides the `sequelize` command-line tool for generating migration and seeder files. It is built on [oclif](https://oclif.io) and supports interactive prompts as well as fully non-interactive (scriptable) usage.
+
+## Installation
+
+Install `@sequelize/cli` as a development dependency in your project:
+
+<CodeGroup>
+
+```bash npm
+npm install --save-dev @sequelize/cli
+```
+
+```bash yarn
+yarn add --dev @sequelize/cli
+```
+
+```bash pnpm
+pnpm add --save-dev @sequelize/cli
+```
+
+</CodeGroup>
+
+After installation, the `sequelize` binary is available through your package manager's script runner:
+
+<CodeGroup>
+
+```bash npm
+npx sequelize --help
+```
+
+```bash yarn
+yarn sequelize --help
+```
+
+```bash pnpm
+pnpm sequelize --help
+```
+
+</CodeGroup>
+
+## Available commands
+
+| Command | Description |
+|---|---|
+| `sequelize migration generate` | Generate a new migration file |
+| `sequelize seed generate` | Generate a new seed file |
+| `sequelize help [COMMAND]` | Display help for any command |
+
+### `sequelize migration generate`
+
+Generates a timestamped migration file in your configured migrations folder.
+
+```bash
+sequelize migration generate --format=typescript --name="create-users"
+```
+
+| Flag | Required | Default | Description |
+|---|---|---|---|
+| `--format` | Yes | — | File format: `typescript`, `esm`, `cjs`, or `sql` |
+| `--name` | No | `unnamed` | Short descriptive name used in the filename |
+| `--no-interactive` | No | — | Disable interactive prompts; all required flags must be provided |
+| `--json` | No | — | Output the result as JSON |
+
+### `sequelize seed generate`
+
+Generates a timestamped seed file in your configured seeds folder.
+
+```bash
+sequelize seed generate --format=typescript --name="demo-users"
+```
+
+| Flag | Required | Default | Description |
+|---|---|---|---|
+| `--format` | Yes | — | File format: `typescript`, `esm`, `cjs`, or `sql` |
+| `--name` | No | `unnamed` | Short descriptive name used in the filename |
+| `--no-interactive` | No | — | Disable interactive prompts; all required flags must be provided |
+| `--json` | No | — | Output the result as JSON |
+
+## Configuration
+
+The CLI uses [cosmiconfig](https://github.com/cosmiconfig/cosmiconfig) to find its configuration, searching upward from the current working directory. You can place configuration in any of the following locations:
+
+| Location | Example |
+|---|---|
+| `sequelize.config.js` | `export default { migrationFolder: './db/migrations' }` |
+| `sequelize.config.cjs` | `module.exports = { migrationFolder: './db/migrations' }` |
+| `.sequelizerc` | JSON or JS file with config object |
+| `package.json` — `"sequelize"` key | `{ "sequelize": { "migrationFolder": "db/migrations" } }` |
+
+The configuration file is resolved relative to where that file lives, so paths are resolved from the project root rather than from the current working directory.
+
+### Configuration options
+
+| Option | Type | Default | Description |
+|---|---|---|---|
+| `migrationFolder` | `string` | `./migrations` | Directory where migration files are generated and read from |
+| `seedFolder` | `string` | `./seeds` | Directory where seed files are generated and read from |
+
+### Example configuration file
+
+```javascript sequelize.config.js
+export default {
+  migrationFolder: 'db/migrations',
+  seedFolder: 'db/seeds',
+};
+```
+
+```json package.json
+{
+  "sequelize": {
+    "migrationFolder": "db/migrations",
+    "seedFolder": "db/seeds"
+  }
+}
+```
+
+<Note>
+If no configuration file is found, the CLI resolves `migrationFolder` and `seedFolder` relative to the current working directory.
+</Note>
+
+## File formats
+
+Both `migration generate` and `seed generate` support four output formats. Choose the one that matches your project's module system:
+
+| Format | Extension | Use when |
+|---|---|---|
+| `typescript` | `.ts` | Your project uses TypeScript |
+| `esm` | `.mjs` | Your project uses ES modules (`"type": "module"`) |
+| `cjs` | `.cjs` | Your project uses CommonJS |
+| `sql` | `.sql` | You want raw SQL files (`up.sql` and `down.sql` in a folder) |
+
+## Interactive mode
+
+By default, commands run in **interactive mode**. If a required flag is not provided on the command line, the CLI will prompt you to choose or enter a value using an interactive terminal UI.
+
+To disable interactive prompts — for example in CI pipelines — pass `--no-interactive` and supply all required flags explicitly:
+
+```bash
+sequelize migration generate --no-interactive --format=typescript --name="add-email-to-users"
+```
+
+<Tip>
+Use `--json` together with `--no-interactive` to get machine-readable output from scripts. The JSON result includes the `path` of the generated file.
+</Tip>
+
+## Learn more
+
+<CardGroup cols={2}>
+  <Card title="Migrations" icon="arrow-up" href="/cli/migrations">
+    Generate and write migration files to evolve your database schema over time.
+  </Card>
+  <Card title="Seeders" icon="database" href="/cli/seeders">
+    Generate and write seed files to populate your database with initial or test data.
+  </Card>
+</CardGroup>

@@ -1,0 +1,254 @@
+---
+title: "Scopes"
+description: "Define reusable query conditions with model scopes"
+---
+
+Scopes let you define named, reusable query conditions on a model and compose them when querying. Instead of repeating `{ where: { active: true } }` across your codebase, you define it once as a scope and apply it by name.
+
+## Defining scopes
+
+Scopes are defined in `Model.init()` using the `scopes` option. Each key is the scope name; the value is either a plain `FindOptions` object or a function that returns one.
+
+```typescript
+import { Model, DataTypes } from '@sequelize/core';
+
+class Post extends Model {
+  declare title: string;
+  declare status: 'published' | 'draft' | 'archived';
+  declare authorId: number;
+  declare views: number;
+}
+
+Post.init(
+  {
+    title: DataTypes.STRING,
+    status: DataTypes.STRING,
+    authorId: DataTypes.INTEGER,
+    views: DataTypes.INTEGER,
+  },
+  {
+    sequelize,
+    scopes: {
+      // Simple object scope
+      published: {
+        where: { status: 'published' },
+      },
+
+      // Simple object scope
+      draft: {
+        where: { status: 'draft' },
+      },
+
+      // Function scope — accepts an argument
+      byAuthor(authorId: number) {
+        return {
+          where: { authorId },
+        };
+      },
+
+      // Scope with ordering and limit
+      popular: {
+        where: { views: { [Op.gte]: 1000 } },
+        order: [['views', 'DESC']],
+      },
+    },
+  },
+);
+```
+
+## The default scope
+
+The `defaultScope` is applied automatically to every query unless you call `withoutScope()` (or the deprecated `unscoped()`).
+
+```typescript
+Post.init(
+  { /* attributes */ },
+  {
+    sequelize,
+    // Always exclude archived posts unless explicitly unscoped
+    defaultScope: {
+      where: { status: { [Op.ne]: 'archived' } },
+    },
+    scopes: {
+      // ...
+    },
+  },
+);
+```
+
+<Note>
+  The default scope is merged with any additional query options you provide, such as additional `where` conditions.
+</Note>
+
+## Applying scopes
+
+Use `Model.withScope()` (or the deprecated `Model.scope()`) to apply one or more scopes. The method returns a new model class with the scopes applied — it does not mutate the original model.
+
+<Tabs>
+  <Tab title="Single scope">
+    ```typescript
+    // Returns all published posts
+    const posts = await Post.withScope('published').findAll();
+    ```
+  </Tab>
+  <Tab title="Multiple scopes">
+    ```typescript
+    // Applies both scopes — conditions are merged with AND
+    const posts = await Post.withScope(['published', 'popular']).findAll();
+    ```
+  </Tab>
+  <Tab title="Scope with arguments">
+    ```typescript
+    // Pass a scope with arguments using the { method } form
+    const posts = await Post.withScope({
+      method: ['byAuthor', 42],
+    }).findAll();
+    ```
+  </Tab>
+  <Tab title="Multiple with arguments">
+    ```typescript
+    const posts = await Post.withScope([
+      'published',
+      { method: ['byAuthor', 42] },
+    ]).findAll();
+    ```
+  </Tab>
+</Tabs>
+
+The scoped model can be used anywhere a normal model can — with `findAll`, `findOne`, `count`, `update`, `destroy`, and so on:
+
+```typescript
+const count = await Post.withScope('published').count();
+const one = await Post.withScope('popular').findOne();
+```
+
+## Merging scopes with additional query options
+
+Extra query options passed directly to the finder are merged with the scope:
+
+```typescript
+// Applies the 'published' scope AND limits results to 10, ordered by title
+const posts = await Post.withScope('published').findAll({
+  limit: 10,
+  order: [['title', 'ASC']],
+});
+```
+
+When two scopes (or a scope and explicit options) define the same property, the rules are:
+- `where` clauses are merged with `AND`.
+- `attributes`, `include`, `order`, and `limit` from the last scope applied take precedence (override).
+
+## Removing the default scope
+
+Use `withoutScope()` to strip all scopes including the default:
+
+```typescript
+// Returns ALL posts, including archived ones
+const allPosts = await Post.withoutScope().findAll();
+```
+
+To return only to the model's initial scope (the state set during `Model.init()`), use `withInitialScope()`:
+
+```typescript
+const initialModel = Post.withInitialScope();
+```
+
+<Note>
+  `withoutScope()` and `withInitialScope()` are the preferred methods in Sequelize v7+. The older `unscoped()` and `scope()` are deprecated aliases.
+</Note>
+
+## Adding scopes dynamically
+
+You can add new scopes to a model after initialization using `Model.addScope()`. This is useful when the scope needs to reference another model that is not yet available at definition time (for example, scopes with `include`).
+
+```typescript
+// Called after both Post and Comment are defined
+Post.addScope('withComments', {
+  include: [{ model: Comment }],
+});
+
+// Overwrite an existing scope
+Post.addScope(
+  'published',
+  { where: { status: 'published', approvedAt: { [Op.ne]: null } } },
+  { override: true },
+);
+```
+
+## Association scopes
+
+When defining a `hasMany` or `belongsToMany` association, you can attach a scope that is applied automatically whenever the association is queried. This is different from model scopes — it lives on the association itself.
+
+```typescript
+User.hasMany(Post, {
+  as: 'publishedPosts',
+  scope: { status: 'published' },
+});
+
+// Fetches only published posts for this user
+const publishedPosts = await user.getPublishedPosts();
+```
+
+## Practical example: Post model with multiple scopes
+
+```typescript
+import { Model, DataTypes, Op } from '@sequelize/core';
+
+class Post extends Model {
+  declare id: number;
+  declare title: string;
+  declare status: 'published' | 'draft';
+  declare authorId: number;
+  declare publishedAt: Date | null;
+}
+
+Post.init(
+  {
+    id: { type: DataTypes.INTEGER, primaryKey: true, autoIncrement: true },
+    title: DataTypes.STRING,
+    status: DataTypes.STRING,
+    authorId: DataTypes.INTEGER,
+    publishedAt: DataTypes.DATE,
+  },
+  {
+    sequelize,
+    defaultScope: {
+      where: { status: 'published' },
+    },
+    scopes: {
+      published: {
+        where: { status: 'published', publishedAt: { [Op.ne]: null } },
+        order: [['publishedAt', 'DESC']],
+      },
+      draft: {
+        where: { status: 'draft' },
+      },
+      byAuthor(authorId: number) {
+        return { where: { authorId } };
+      },
+      recent: {
+        where: {
+          publishedAt: { [Op.gte]: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000) },
+        },
+      },
+    },
+  },
+);
+
+// Usage
+const recentByAlice = await Post.withScope([
+  'recent',
+  { method: ['byAuthor', aliceId] },
+]).findAll();
+
+const allDrafts = await Post.withoutScope().withScope('draft').findAll();
+```
+
+<CardGroup cols={2}>
+  <Card title="Hooks" icon="bolt" href="/hooks">
+    Execute logic at key points in the model lifecycle.
+  </Card>
+  <Card title="Optimistic locking" icon="lock" href="/optimistic-locking">
+    Prevent lost updates with version numbers.
+  </Card>
+</CardGroup>

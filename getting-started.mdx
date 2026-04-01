@@ -1,0 +1,229 @@
+---
+title: "Getting Started"
+description: "Install Sequelize and make your first database connection"
+---
+
+<Note>
+  Sequelize v7 requires Node.js **>=18.20.8**. Check your version with `node --version` before continuing.
+</Note>
+
+<Steps>
+
+<Step title="Install packages">
+
+Install `@sequelize/core` and the dialect package for your database. This guide uses PostgreSQL, but you can swap in any supported dialect — see [Supported Dialects](/dialects) for the full list.
+
+<CodeGroup>
+
+```bash npm
+npm install @sequelize/core @sequelize/postgres
+```
+
+```bash yarn
+yarn add @sequelize/core @sequelize/postgres
+```
+
+```bash pnpm
+pnpm add @sequelize/core @sequelize/postgres
+```
+
+</CodeGroup>
+
+</Step>
+
+<Step title="Create a Sequelize instance">
+
+In v7, the `dialect` option accepts a dialect **class** imported from the dialect package rather than a string. This enables full TypeScript inference and removes the need for separate dialect packages to be resolved at runtime.
+
+```typescript
+import { Sequelize } from '@sequelize/core';
+import { PostgresDialect } from '@sequelize/postgres';
+
+const sequelize = new Sequelize({
+  dialect: PostgresDialect,
+  database: 'my_database',
+  user: 'my_user',
+  password: 'my_password',
+  host: 'localhost',
+  port: 5432,
+  ssl: false,
+  clientMinMessages: 'notice',
+});
+```
+
+You can also pass a connection URL:
+
+```typescript
+const sequelize = new Sequelize({
+  dialect: PostgresDialect,
+  url: 'postgres://my_user:my_password@localhost:5432/my_database',
+});
+```
+
+To verify the connection is working, call `sequelize.authenticate()`:
+
+```typescript
+try {
+  await sequelize.authenticate();
+  console.log('Connection established successfully.');
+} catch (error) {
+  console.error('Unable to connect to the database:', error);
+}
+```
+
+</Step>
+
+<Step title="Define a model">
+
+A model maps to a database table. Extend `Model` with `InferAttributes` and `InferCreationAttributes` so TypeScript can derive attribute types from your class fields. Use `declare` for all mapped properties so TypeScript knows they are set by Sequelize rather than by your constructor.
+
+```typescript
+import { DataTypes, Model } from '@sequelize/core';
+import type {
+  CreationOptional,
+  InferAttributes,
+  InferCreationAttributes,
+} from '@sequelize/core';
+
+class User extends Model<InferAttributes<User>, InferCreationAttributes<User>> {
+  // `id` is optional on creation because the database generates it
+  declare id: CreationOptional<number>;
+  declare name: string;
+  declare email: string;
+  // Sequelize automatically manages `createdAt` and `updatedAt`
+  declare createdAt: CreationOptional<Date>;
+  declare updatedAt: CreationOptional<Date>;
+}
+
+User.init(
+  {
+    id: {
+      type: DataTypes.INTEGER.UNSIGNED,
+      autoIncrement: true,
+      primaryKey: true,
+    },
+    name: {
+      type: DataTypes.STRING(128),
+      allowNull: false,
+    },
+    email: {
+      type: DataTypes.STRING,
+      allowNull: false,
+      unique: true,
+    },
+    createdAt: DataTypes.DATE,
+    updatedAt: DataTypes.DATE,
+  },
+  {
+    sequelize, // the Sequelize instance created in the previous step
+    tableName: 'users',
+  },
+);
+```
+
+</Step>
+
+<Step title="Sync and query">
+
+`sequelize.sync()` creates any tables that do not already exist. In production, use [migrations](https://sequelize.org/docs/v7/migration) instead of sync.
+
+```typescript
+// Create the `users` table if it does not exist
+await sequelize.sync();
+
+// Insert a row
+const alice = await User.create({ name: 'Alice', email: 'alice@example.com' });
+console.log(alice.id); // auto-generated primary key
+
+// Query rows
+const users = await User.findAll({
+  where: { name: 'Alice' },
+});
+console.log(users.length); // 1
+
+// Update a row
+await alice.update({ name: 'Alice Smith' });
+
+// Delete a row
+await alice.destroy();
+```
+
+</Step>
+
+</Steps>
+
+## Complete example
+
+The following is a self-contained TypeScript file that connects to PostgreSQL, defines a `User` model, and performs basic CRUD operations.
+
+```typescript
+import { DataTypes, Model, Sequelize } from '@sequelize/core';
+import type {
+  CreationOptional,
+  InferAttributes,
+  InferCreationAttributes,
+} from '@sequelize/core';
+import { PostgresDialect } from '@sequelize/postgres';
+
+// 1. Create the Sequelize instance
+const sequelize = new Sequelize({
+  dialect: PostgresDialect,
+  url: 'postgres://my_user:my_password@localhost:5432/my_database',
+});
+
+// 2. Define a model
+class User extends Model<InferAttributes<User>, InferCreationAttributes<User>> {
+  declare id: CreationOptional<number>;
+  declare name: string;
+  declare email: string;
+  declare createdAt: CreationOptional<Date>;
+  declare updatedAt: CreationOptional<Date>;
+}
+
+User.init(
+  {
+    id: {
+      type: DataTypes.INTEGER.UNSIGNED,
+      autoIncrement: true,
+      primaryKey: true,
+    },
+    name: {
+      type: DataTypes.STRING(128),
+      allowNull: false,
+    },
+    email: {
+      type: DataTypes.STRING,
+      allowNull: false,
+      unique: true,
+    },
+    createdAt: DataTypes.DATE,
+    updatedAt: DataTypes.DATE,
+  },
+  { sequelize, tableName: 'users' },
+);
+
+// 3. Sync, insert, and query
+async function main() {
+  await sequelize.authenticate();
+  await sequelize.sync();
+
+  const user = await User.create({ name: 'Alice', email: 'alice@example.com' });
+  console.log(`Created user with id ${user.id}`);
+
+  const found = await User.findByPk(user.id);
+  console.log(found?.name); // Alice
+}
+
+main().catch(console.error);
+```
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="Supported dialects" icon="database" href="/dialects">
+    Configuration examples for PostgreSQL, MySQL, SQLite, and more.
+  </Card>
+  <Card title="Defining models" icon="table" href="/models/defining-models">
+    Learn all the options available when defining model attributes.
+  </Card>
+</CardGroup>

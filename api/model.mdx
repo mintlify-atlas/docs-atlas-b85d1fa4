@@ -1,0 +1,648 @@
+---
+title: "Model Class"
+description: "API reference for the Sequelize Model base class"
+---
+
+Every model in Sequelize extends the `Model` base class. It provides a rich set of static methods for querying the database and instance methods for working with individual records.
+
+```typescript
+import { Model, DataTypes, InferAttributes, InferCreationAttributes } from '@sequelize/core';
+
+class User extends Model<InferAttributes<User>, InferCreationAttributes<User>> {
+  declare id: number;
+  declare name: string;
+  declare email: string;
+}
+
+User.init({
+  id: { type: DataTypes.INTEGER, primaryKey: true, autoIncrement: true },
+  name: DataTypes.STRING,
+  email: { type: DataTypes.STRING, unique: true },
+}, { sequelize, tableName: 'users' });
+```
+
+---
+
+## Static Methods
+
+### init()
+
+```typescript
+Model.init(attributes: ModelAttributes, options: InitOptions): typeof Model
+```
+
+Defines the model's attributes and registers it with a Sequelize instance. Must be called before any queries are made.
+
+<ParamField body="attributes" type="ModelAttributes" required>
+  An object mapping attribute names to their data type or a full attribute options object.
+</ParamField>
+
+<ParamField body="options" type="InitOptions" required>
+  <Expandable title="InitOptions properties">
+    <ParamField body="sequelize" type="Sequelize" required>
+      The Sequelize instance to register the model with.
+    </ParamField>
+    <ParamField body="tableName" type="string">
+      The database table name. Defaults to the plural snake_case of the model name.
+    </ParamField>
+    <ParamField body="modelName" type="string">
+      The name used to identify this model within a Sequelize instance. Defaults to the class name.
+    </ParamField>
+    <ParamField body="timestamps" type="boolean" default="true">
+      Automatically add `createdAt` and `updatedAt` timestamp columns.
+    </ParamField>
+    <ParamField body="paranoid" type="boolean" default="false">
+      Enables soft-deletes. Instead of permanently deleting rows, sets a `deletedAt` column.
+    </ParamField>
+    <ParamField body="underscored" type="boolean" default="false">
+      Converts camelCase attribute names to snake_case column names automatically.
+    </ParamField>
+    <ParamField body="freezeTableName" type="boolean" default="false">
+      Prevents Sequelize from pluralizing the model name to derive the table name.
+    </ParamField>
+    <ParamField body="schema" type="string">
+      Database schema for this model's table.
+    </ParamField>
+    <ParamField body="indexes" type="IndexOptions[]">
+      Array of index definitions to create when syncing.
+    </ParamField>
+    <ParamField body="scopes" type="Record<string, FindOptions | ((...args) => FindOptions)>">
+      Named query scopes available via `Model.scope('name')`.
+    </ParamField>
+    <ParamField body="defaultScope" type="FindOptions">
+      A scope applied automatically to every query on this model.
+    </ParamField>
+    <ParamField body="hooks" type="Partial<ModelHooks>">
+      Lifecycle hooks for this model.
+    </ParamField>
+    <ParamField body="validate" type="Record<string, () => void>">
+      Model-wide custom validators that run after attribute-level validators.
+    </ParamField>
+  </Expandable>
+</ParamField>
+
+---
+
+### findAll()
+
+```typescript
+Model.findAll(options?: FindOptions): Promise<Model[]>
+```
+
+Retrieves all rows matching the provided options.
+
+```typescript
+const users = await User.findAll({
+  where: { active: true },
+  order: [['createdAt', 'DESC']],
+  limit: 20,
+  offset: 0,
+  attributes: ['id', 'name', 'email'],
+});
+```
+
+<ParamField body="where" type="WhereOptions">
+  Filter conditions. Supports operators from the `Op` namespace.
+</ParamField>
+
+<ParamField body="attributes" type="string[] | { include?: ..., exclude?: string[] }">
+  Columns to select. Pass an array of names, or an object with `include`/`exclude` keys.
+</ParamField>
+
+<ParamField body="include" type="Includeable | Includeable[]">
+  Eager-load associated models. Accepts model classes, association references, or `IncludeOptions` objects.
+</ParamField>
+
+<ParamField body="order" type="OrderItem[]">
+  Sort order. Each item is a tuple: `['columnName', 'ASC' | 'DESC']`.
+</ParamField>
+
+<ParamField body="limit" type="number">
+  Maximum number of rows to return.
+</ParamField>
+
+<ParamField body="offset" type="number">
+  Number of rows to skip before returning results.
+</ParamField>
+
+<ParamField body="group" type="string | string[]">
+  `GROUP BY` clause.
+</ParamField>
+
+<ParamField body="having" type="WhereOptions">
+  `HAVING` clause, applied after grouping.
+</ParamField>
+
+<ParamField body="transaction" type="Transaction | null">
+  Run the query within a specific transaction. If omitted and a CLS transaction is active, that transaction is used automatically.
+</ParamField>
+
+<ParamField body="lock" type="Lock | { level: Lock, of: ModelStatic }">
+  Apply a row-level lock (`FOR UPDATE`, `FOR SHARE`, etc.).
+</ParamField>
+
+<ParamField body="raw" type="boolean">
+  When `true`, returns plain JS objects instead of model instances.
+</ParamField>
+
+---
+
+### findOne()
+
+```typescript
+Model.findOne(options?: FindOptions): Promise<Model | null>
+```
+
+Returns the first row matching the options, or `null` if none found.
+
+```typescript
+const user = await User.findOne({ where: { email: 'alice@example.com' } });
+```
+
+---
+
+### findByPk()
+
+```typescript
+Model.findByPk(pk: number | string | Buffer, options?: FindByPkOptions): Promise<Model | null>
+```
+
+Finds a single record by its primary key. Returns `null` when not found.
+
+```typescript
+const user = await User.findByPk(42);
+if (user === null) {
+  throw new Error('User not found');
+}
+```
+
+<Note>
+  To throw an error instead of returning `null`, use `rejectOnEmpty: true` in the options.
+</Note>
+
+---
+
+### findOrCreate()
+
+```typescript
+Model.findOrCreate(options: FindOrCreateOptions): Promise<[Model, boolean]>
+```
+
+Looks for a row matching `where`. If none is found, creates one using the values from `defaults`. Returns a tuple of `[instance, created]` where `created` is `true` if a new row was inserted.
+
+```typescript
+const [user, created] = await User.findOrCreate({
+  where: { email: 'bob@example.com' },
+  defaults: { name: 'Bob', role: 'user' },
+});
+```
+
+<Warning>
+  This operation is not atomic by default in all databases. To prevent race conditions, wrap it in a transaction with a serializable isolation level.
+</Warning>
+
+---
+
+### findAndCountAll()
+
+```typescript
+Model.findAndCountAll(options?: FindAndCountOptions): Promise<{ count: number; rows: Model[] }>
+```
+
+Runs `findAll` and `count` in a single query. Useful for paginated responses.
+
+```typescript
+const { count, rows } = await User.findAndCountAll({
+  where: { active: true },
+  limit: 10,
+  offset: 20,
+});
+
+console.log(`Page shows ${rows.length} of ${count} total results`);
+```
+
+---
+
+### create()
+
+```typescript
+Model.create(values: CreationAttributes, options?: CreateOptions): Promise<Model>
+```
+
+Creates and persists a new model instance.
+
+```typescript
+const user = await User.create({
+  name: 'Carol',
+  email: 'carol@example.com',
+});
+```
+
+<ParamField body="values" type="CreationAttributes" required>
+  The attribute values for the new record.
+</ParamField>
+
+<ParamField body="returning" type="boolean | string[]">
+  PostgreSQL/MS SQL Server: Return the inserted row(s). Pass an array to specify which columns to return.
+</ParamField>
+
+---
+
+### bulkCreate()
+
+```typescript
+Model.bulkCreate(records: CreationAttributes[], options?: BulkCreateOptions): Promise<Model[]>
+```
+
+Inserts multiple records in a single SQL statement. Much more efficient than calling `create()` in a loop.
+
+```typescript
+await User.bulkCreate([
+  { name: 'Dave', email: 'dave@example.com' },
+  { name: 'Eve', email: 'eve@example.com' },
+]);
+```
+
+<ParamField body="updateOnDuplicate" type="string[]">
+  List of attribute names to update when a duplicate key conflict occurs (upsert behavior). Supported in MySQL, MariaDB, PostgreSQL, and SQLite.
+</ParamField>
+
+<ParamField body="validate" type="boolean" default="false">
+  Run model validations on each record before inserting.
+</ParamField>
+
+<ParamField body="ignoreDuplicates" type="boolean" default="false">
+  Silently skip rows that would violate a unique constraint instead of throwing.
+</ParamField>
+
+---
+
+### update()
+
+```typescript
+Model.update(
+  values: Partial<Attributes>,
+  options: UpdateOptions
+): Promise<[affectedCount: number]>
+```
+
+Updates rows matching the `where` clause. Returns the count of affected rows.
+
+```typescript
+const [count] = await User.update(
+  { active: false },
+  { where: { lastLoginAt: { [Op.lt]: thirtyDaysAgo } } }
+);
+```
+
+---
+
+### destroy()
+
+```typescript
+Model.destroy(options: DestroyOptions): Promise<number>
+```
+
+Deletes rows matching `where`. Returns the number of deleted rows. If the model has `paranoid: true`, sets `deletedAt` instead.
+
+```typescript
+await User.destroy({ where: { active: false } });
+```
+
+<ParamField body="where" type="WhereOptions" required>
+  Filter specifying which rows to delete.
+</ParamField>
+
+<ParamField body="truncate" type="boolean" default="false">
+  Use `TRUNCATE TABLE` instead of `DELETE FROM`. Faster for clearing all rows. Ignores `where`.
+</ParamField>
+
+<ParamField body="force" type="boolean" default="false">
+  For paranoid models: permanently delete the row, bypassing the soft-delete mechanism.
+</ParamField>
+
+---
+
+### upsert()
+
+```typescript
+Model.upsert(values: CreationAttributes, options?: UpsertOptions): Promise<[Model, boolean | null]>
+```
+
+Inserts a row or updates it if it already exists (based on the primary key or unique constraints). Returns `[instance, created]`.
+
+```typescript
+const [user, created] = await User.upsert({ id: 1, name: 'Updated Name' });
+```
+
+---
+
+### count()
+
+```typescript
+Model.count(options?: CountOptions): Promise<number>
+```
+
+Counts the number of rows matching the given options.
+
+```typescript
+const total = await User.count({ where: { active: true } });
+```
+
+---
+
+### max() / min() / sum()
+
+```typescript
+Model.max<T>(field: string, options?: AggregateOptions): Promise<T>
+Model.min<T>(field: string, options?: AggregateOptions): Promise<T>
+Model.sum<T>(field: string, options?: AggregateOptions): Promise<T>
+```
+
+Run aggregate functions on a single column.
+
+```typescript
+const maxAge = await User.max('age');
+const minAge = await User.min('age');
+const totalBalance = await Account.sum('balance', { where: { active: true } });
+```
+
+---
+
+### scope()
+
+```typescript
+Model.scope(options: string | string[] | ScopeOptions | ScopeOptions[]): typeof Model
+```
+
+Returns a copy of the model class with the given scope(s) applied. Scopes chain together.
+
+```typescript
+const ActiveAdmins = User.scope('active', 'admin');
+const users = await ActiveAdmins.findAll();
+```
+
+---
+
+### unscoped()
+
+```typescript
+Model.unscoped(): typeof Model
+```
+
+Returns a copy of the model class with all scopes (including the default scope) removed.
+
+```typescript
+const allUsers = await User.unscoped().findAll();
+```
+
+---
+
+### addScope()
+
+```typescript
+Model.addScope(name: string, scope: FindOptions | ((...args) => FindOptions), options?: AddScopeOptions): void
+```
+
+Adds a named scope to the model after initialization. Pass `{ override: true }` to replace an existing scope.
+
+```typescript
+User.addScope('active', { where: { active: true } });
+```
+
+---
+
+## Instance Methods
+
+### save()
+
+```typescript
+instance.save(options?: SaveOptions): Promise<this>
+```
+
+Persists the current instance state to the database. Issues an `INSERT` for new instances and `UPDATE` for existing ones. Only changed fields are included in `UPDATE` statements.
+
+```typescript
+user.name = 'Updated Name';
+await user.save();
+
+// Save only specific fields
+await user.save({ fields: ['name'] });
+```
+
+---
+
+### update()
+
+```typescript
+instance.update(values: Partial<Attributes>, options?: SaveOptions): Promise<this>
+```
+
+Updates the specified attributes on the instance and saves them. Equivalent to calling `set()` then `save()`.
+
+```typescript
+await user.update({ name: 'New Name', email: 'new@example.com' });
+```
+
+---
+
+### destroy()
+
+```typescript
+instance.destroy(options?: DestroyOptions): Promise<void>
+```
+
+Deletes the current row from the database. For paranoid models, sets `deletedAt` instead.
+
+```typescript
+await user.destroy();
+// Permanently delete even a paranoid model:
+await user.destroy({ force: true });
+```
+
+---
+
+### reload()
+
+```typescript
+instance.reload(options?: FindOptions): Promise<this>
+```
+
+Re-fetches the instance from the database, refreshing all attributes to their current database values.
+
+```typescript
+await user.reload();
+```
+
+---
+
+### validate()
+
+```typescript
+instance.validate(options?: ValidationOptions): Promise<void>
+```
+
+Runs all validators on the instance. Throws `ValidationError` if any validation fails.
+
+```typescript
+try {
+  await user.validate();
+} catch (error) {
+  if (error instanceof ValidationError) {
+    for (const item of error.errors) {
+      console.error(item.path, item.message);
+    }
+  }
+}
+```
+
+---
+
+### toJSON()
+
+```typescript
+instance.toJSON<T>(): T
+```
+
+Returns a plain JavaScript object representation of the instance, suitable for serialization. Virtual attributes are included; internal Sequelize properties are excluded.
+
+```typescript
+const plain = user.toJSON();
+// or via JSON.stringify (calls toJSON automatically):
+const json = JSON.stringify(user);
+```
+
+---
+
+### get()
+
+```typescript
+instance.get(key: string, options?: GetOptions): unknown
+instance.get(options?: GetOptions): Record<string, unknown>
+```
+
+Returns the value of a single attribute, or all attributes as a plain object when called without a key.
+
+```typescript
+const name = user.get('name');
+const all = user.get({ plain: true });
+```
+
+---
+
+### set()
+
+```typescript
+instance.set(key: string, value: unknown, options?: SetOptions): this
+instance.set(values: Record<string, unknown>, options?: SetOptions): this
+```
+
+Sets the value of one or more attributes without persisting to the database. Triggers virtual setters and marks the attribute as changed.
+
+```typescript
+user.set('name', 'New Name');
+user.set({ name: 'New Name', email: 'new@example.com' });
+```
+
+---
+
+### getDataValue() / setDataValue()
+
+```typescript
+instance.getDataValue(key: string): unknown
+instance.setDataValue(key: string, value: unknown): void
+```
+
+Low-level accessors that bypass virtual getters/setters. Use these inside custom getter/setter definitions.
+
+```typescript
+get name() {
+  return this.getDataValue('name')?.toUpperCase();
+}
+
+set name(value: string) {
+  this.setDataValue('name', value.trim());
+}
+```
+
+---
+
+## Instance Properties
+
+<ResponseField name="isNewRecord" type="boolean">
+  `true` if the instance has never been saved to the database (i.e. it was built with `Model.build()` but not yet saved).
+</ResponseField>
+
+<ResponseField name="sequelize" type="Sequelize">
+  The Sequelize instance this model is registered with.
+</ResponseField>
+
+---
+
+## Usage Examples
+
+<Tabs>
+  <Tab title="TypeScript">
+    ```typescript
+    import {
+      Model,
+      DataTypes,
+      InferAttributes,
+      InferCreationAttributes,
+      CreationOptional,
+    } from '@sequelize/core';
+
+    class Post extends Model<
+      InferAttributes<Post>,
+      InferCreationAttributes<Post>
+    > {
+      declare id: CreationOptional<number>;
+      declare title: string;
+      declare body: string;
+      declare publishedAt: CreationOptional<Date | null>;
+    }
+
+    Post.init({
+      id: { type: DataTypes.INTEGER, primaryKey: true, autoIncrement: true },
+      title: { type: DataTypes.STRING, allowNull: false },
+      body: DataTypes.TEXT,
+      publishedAt: DataTypes.DATE,
+    }, { sequelize });
+
+    // Create
+    const post = await Post.create({ title: 'Hello', body: 'World' });
+
+    // Find
+    const posts = await Post.findAll({
+      where: { publishedAt: { [Op.ne]: null } },
+      order: [['publishedAt', 'DESC']],
+      limit: 10,
+    });
+
+    // Update
+    await post.update({ title: 'Updated Title' });
+
+    // Delete
+    await post.destroy();
+    ```
+  </Tab>
+  <Tab title="JavaScript">
+    ```javascript
+    const { Model, DataTypes } = require('@sequelize/core');
+
+    class Post extends Model {}
+
+    Post.init({
+      id: { type: DataTypes.INTEGER, primaryKey: true, autoIncrement: true },
+      title: { type: DataTypes.STRING, allowNull: false },
+      body: DataTypes.TEXT,
+      publishedAt: DataTypes.DATE,
+    }, { sequelize });
+
+    const post = await Post.create({ title: 'Hello', body: 'World' });
+    const posts = await Post.findAll({ order: [['id', 'DESC']] });
+    await post.update({ title: 'Updated' });
+    await post.destroy();
+    ```
+  </Tab>
+</Tabs>

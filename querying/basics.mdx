@@ -1,0 +1,415 @@
+---
+title: "Basic Queries"
+description: "Create, read, update, and delete records with Sequelize"
+keywords: ["sequelize", "create", "findAll", "update", "destroy", "upsert", "where", "operators"]
+---
+
+Sequelize provides static methods on each Model class for the standard CRUD operations. All of them are `async` and return a `Promise`.
+
+## Creating records
+
+### Model.create()
+
+Creates a single record and returns the new model instance (with all database-generated values populated).
+
+```typescript
+const user = await User.create({
+  username: 'alice',
+  email: 'alice@example.com',
+  age: 30,
+});
+
+console.log(user.id);         // auto-generated primary key
+console.log(user.createdAt);  // auto-set timestamp
+```
+
+To prevent certain fields from being written, pass a `fields` allowlist:
+
+```typescript
+const user = await User.create(req.body, {
+  fields: ['username', 'email'],  // only these fields are inserted
+});
+```
+
+### Model.bulkCreate()
+
+Inserts multiple rows in a single SQL `INSERT` statement.
+
+```typescript
+const users = await User.bulkCreate([
+  { username: 'alice', email: 'alice@example.com' },
+  { username: 'bob',   email: 'bob@example.com'   },
+  { username: 'carol', email: 'carol@example.com' },
+]);
+```
+
+<Note>
+Per-row validations are **skipped** by default in `bulkCreate`. Pass `{ validate: true }` to enable them.
+</Note>
+
+```typescript
+await User.bulkCreate(records, { validate: true });
+```
+
+Use `updateOnDuplicate` to upsert during a bulk insert (MySQL, MariaDB, SQLite ≥ 3.24, PostgreSQL ≥ 9.5):
+
+```typescript
+await User.bulkCreate(records, {
+  updateOnDuplicate: ['email', 'updatedAt'],
+});
+```
+
+---
+
+## Reading records
+
+### Model.findAll()
+
+Returns an array of model instances matching the provided options. Returns all rows when called with no arguments.
+
+```typescript
+const users = await User.findAll();
+```
+
+#### Filtering with `where`
+
+```typescript
+const admins = await User.findAll({
+  where: { role: 'admin' },
+});
+```
+
+#### Selecting specific columns with `attributes`
+
+```typescript
+const users = await User.findAll({
+  attributes: ['id', 'username', 'email'],
+});
+
+// Exclude specific columns
+const users = await User.findAll({
+  attributes: { exclude: ['password', 'secretToken'] },
+});
+```
+
+#### Ordering results
+
+```typescript
+// Sort by createdAt descending
+const users = await User.findAll({
+  order: [['createdAt', 'DESC']],
+});
+
+// Multiple sort columns
+const users = await User.findAll({
+  order: [
+    ['lastName', 'ASC'],
+    ['firstName', 'ASC'],
+  ],
+});
+```
+
+#### Pagination with `limit` and `offset`
+
+```typescript
+const page = 2;
+const pageSize = 20;
+
+const users = await User.findAll({
+  limit: pageSize,
+  offset: (page - 1) * pageSize,
+  order: [['id', 'ASC']],
+});
+```
+
+---
+
+## The `where` option and operators
+
+For comparisons beyond strict equality, import `Op` from `@sequelize/core`:
+
+```typescript
+import { Op } from '@sequelize/core';
+```
+
+### Common operators
+
+```typescript
+// Equal (default, same as { age: 30 })
+{ age: { [Op.eq]: 30 } }
+
+// Not equal
+{ status: { [Op.ne]: 'deleted' } }
+
+// Greater than / less than
+{ age: { [Op.gt]: 18 } }
+{ age: { [Op.gte]: 18 } }
+{ age: { [Op.lt]: 65 } }
+{ age: { [Op.lte]: 65 } }
+
+// BETWEEN
+{ age: { [Op.between]: [18, 65] } }
+
+// IN
+{ status: { [Op.in]: ['active', 'pending'] } }
+
+// NOT IN
+{ status: { [Op.notIn]: ['deleted', 'banned'] } }
+
+// LIKE
+{ username: { [Op.like]: 'ali%' } }
+{ username: { [Op.notLike]: '%admin%' } }
+
+// Case-insensitive LIKE (PostgreSQL)
+{ username: { [Op.iLike]: 'ali%' } }
+
+// IS NULL / IS NOT NULL
+{ deletedAt: null }
+{ deletedAt: { [Op.ne]: null } }
+```
+
+### Combining conditions
+
+```typescript
+// AND (default when multiple keys are in the same object)
+await User.findAll({
+  where: {
+    age: { [Op.gte]: 18 },
+    status: 'active',
+  },
+});
+
+// Explicit AND
+import { and } from '@sequelize/core';
+await User.findAll({
+  where: and(
+    { age: { [Op.gte]: 18 } },
+    { status: 'active' },
+  ),
+});
+
+// OR
+import { Op } from '@sequelize/core';
+await User.findAll({
+  where: {
+    [Op.or]: [
+      { status: 'active' },
+      { role: 'admin' },
+    ],
+  },
+});
+```
+
+---
+
+## Updating records
+
+### Model.update()
+
+Updates all rows that match the `where` clause. Returns `[affectedCount]` (and optionally the affected rows in PostgreSQL).
+
+```typescript
+const [affectedCount] = await User.update(
+  { status: 'inactive' },    // values to set
+  { where: { role: 'guest' } }, // which rows
+);
+```
+
+<Warning>
+Calling `Model.update()` without a `where` clause updates every row in the table.
+</Warning>
+
+---
+
+## Deleting records
+
+### Model.destroy()
+
+Deletes all rows matching the `where` clause. Returns the number of deleted rows.
+
+```typescript
+const deletedCount = await User.destroy({
+  where: { status: 'deleted' },
+});
+```
+
+To delete a specific instance, use the instance method:
+
+```typescript
+const user = await User.findByPk(1);
+await user.destroy();
+```
+
+<Note>
+If the model has `paranoid: true`, `destroy()` sets `deletedAt` instead of removing the row. Pass `{ force: true }` to perform a hard delete.
+</Note>
+
+---
+
+## Upserting records
+
+### Model.upsert()
+
+Inserts a row, or updates it if it already exists (based on the primary key or a unique constraint). Returns `[instance, created]`.
+
+```typescript
+const [user, created] = await User.upsert({
+  id: 42,
+  username: 'alice',
+  email: 'alice@example.com',
+});
+
+if (created) {
+  console.log('New user created');
+} else {
+  console.log('Existing user updated');
+}
+```
+
+<Note>
+Support and semantics for `upsert` vary slightly between dialects. PostgreSQL uses `ON CONFLICT DO UPDATE`, MySQL/MariaDB use `ON DUPLICATE KEY UPDATE`.
+</Note>
+
+---
+
+## Putting it all together
+
+```typescript
+import { Op } from '@sequelize/core';
+
+// Create
+const post = await Post.create({
+  title: 'Hello Sequelize',
+  body: 'Content here...',
+  published: false,
+  authorId: 1,
+});
+
+// Read with filters, order, and pagination
+const recentPosts = await Post.findAll({
+  where: {
+    published: true,
+    createdAt: { [Op.gte]: new Date('2025-01-01') },
+  },
+  attributes: ['id', 'title', 'createdAt'],
+  order: [['createdAt', 'DESC']],
+  limit: 10,
+  offset: 0,
+});
+
+// Update
+await Post.update(
+  { published: true },
+  { where: { authorId: 1, published: false } },
+);
+
+// Delete
+await Post.destroy({
+  where: { published: false, createdAt: { [Op.lt]: new Date('2024-01-01') } },
+});
+```
+
+## Expression builders
+
+Sequelize exports several helper functions to embed SQL expressions inside your queries without writing raw SQL strings.
+
+```typescript
+import { fn, col, literal, cast, where, sql } from '@sequelize/core';
+```
+
+### `fn(functionName, ...args)` — SQL functions
+
+Call a SQL function. Arguments can be column references, literals, or plain values.
+
+```typescript
+import { fn, col } from '@sequelize/core';
+
+// SELECT COUNT("id") AS "count"
+await User.findAll({
+  attributes: [[fn('COUNT', col('id')), 'count']],
+});
+
+// WHERE LOWER(username) = 'alice'
+await User.findOne({
+  where: where(fn('LOWER', col('username')), 'alice'),
+});
+
+// ORDER BY RANDOM() — shuffle results
+await Post.findAll({ order: fn('RANDOM') });
+```
+
+### `col(columnName)` — Column references
+
+Reference a database column by name (optionally qualified). Used inside `fn()` or as a WHERE operand.
+
+```typescript
+import { col } from '@sequelize/core';
+
+await User.findAll({
+  attributes: ['id', [fn('UPPER', col('username')), 'upperName']],
+});
+```
+
+### `literal(sql)` — Raw SQL fragments
+
+Embed a raw SQL fragment anywhere a value or expression is expected. Use with care — values in literals are **not** escaped.
+
+```typescript
+import { literal } from '@sequelize/core';
+
+// Increment a counter without loading the instance
+await User.update(
+  { score: literal('score + 1') },
+  { where: { id: 42 } },
+);
+
+// Use a database function as a default value
+await User.findAll({
+  attributes: ['id', [literal('NOW()'), 'serverTime']],
+});
+```
+
+### `sql` tagged template — Safe raw fragments
+
+The `sql` tag lets you write raw SQL while still safely embedding bound values:
+
+```typescript
+import { sql } from '@sequelize/core';
+
+const minAge = 18;
+
+await User.findAll({
+  where: sql`age > ${minAge} AND active = true`,
+});
+```
+
+### `cast(value, type)` — Type casting
+
+Cast a value or expression to a specific SQL type.
+
+```typescript
+import { cast, col } from '@sequelize/core';
+
+await User.findAll({
+  attributes: [[cast(col('age'), 'varchar'), 'ageString']],
+});
+```
+
+### `where(left, operator?, right)` — WHERE expressions
+
+Build a WHERE expression with a function call or column reference on the left-hand side.
+
+```typescript
+import { where, fn, col, Op } from '@sequelize/core';
+
+// WHERE LOWER(email) = 'alice@example.com'
+await User.findOne({
+  where: where(fn('LOWER', col('email')), 'alice@example.com'),
+});
+
+// WHERE LENGTH(username) > 5
+await User.findAll({
+  where: where(fn('LENGTH', col('username')), { [Op.gt]: 5 }),
+});
+```
+```

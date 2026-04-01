@@ -1,0 +1,512 @@
+---
+title: "Sequelize Class"
+description: "API reference for the main Sequelize class"
+---
+
+The `Sequelize` class is the entry point for connecting to your database. Each instance represents a single database connection pool and is the root object from which models are defined and queries are executed.
+
+```typescript
+import { Sequelize } from '@sequelize/core';
+import { PostgresDialect } from '@sequelize/postgres';
+
+const sequelize = new Sequelize({
+  dialect: PostgresDialect,
+  database: 'my_db',
+  user: 'postgres',
+  password: 'secret',
+  host: 'localhost',
+  port: 5432,
+});
+```
+
+## Constructor
+
+```typescript
+new Sequelize(options: Options)
+```
+
+<Note>
+Since Sequelize v7, the constructor only accepts an options object. The previous positional arguments form (`new Sequelize(database, username, password, options)`) has been removed.
+</Note>
+
+### Connection Options
+
+<ParamField body="dialect" type="DialectClass | string" required>
+  The dialect class exported from the dialect package (e.g. `PostgresDialect`, `MySqlDialect`), or a dialect name string for legacy support. Using the class form is strongly preferred.
+
+  Supported dialects: `mysql`, `postgres`, `sqlite3`, `mariadb`, `mssql`, `db2`, `snowflake`, `ibmi`, `oracle`.
+</ParamField>
+
+<ParamField body="url" type="string">
+  A connection URL string. Other connection options specified alongside `url` will override the individual components of the URL.
+
+  ```typescript
+  new Sequelize({
+    dialect: MySqlDialect,
+    url: 'mysql://user:pass@localhost:3306/mydb',
+  });
+  ```
+</ParamField>
+
+<ParamField body="replication" type="ReplicationOptions | false">
+  Enable read/write replication. Provide an object with `write` (a single connection config) and `read` (an array of connection configs).
+
+  ```typescript
+  replication: {
+    read: [
+      { host: 'replica1.example.com' },
+      { host: 'replica2.example.com' },
+    ],
+    write: { host: 'primary.example.com' },
+  }
+  ```
+</ParamField>
+
+### Pool Options
+
+<ParamField body="pool" type="PoolOptions">
+  Connection pool configuration.
+
+  <Expandable title="PoolOptions properties">
+    <ParamField body="max" type="number" default="5">
+      Maximum number of connections in the pool.
+    </ParamField>
+    <ParamField body="min" type="number" default="0">
+      Minimum number of connections kept alive in the pool.
+    </ParamField>
+    <ParamField body="idle" type="number" default="10000">
+      Maximum time (ms) a connection can sit idle before being released.
+    </ParamField>
+    <ParamField body="acquire" type="number" default="60000">
+      Maximum time (ms) the pool will wait for a connection before throwing an error.
+    </ParamField>
+    <ParamField body="evict" type="number" default="1000">
+      Interval (ms) at which the pool removes idle connections.
+    </ParamField>
+    <ParamField body="maxUses" type="number" default="Infinity">
+      Number of times a connection may be reused before it is replaced.
+    </ParamField>
+    <ParamField body="validate" type="(connection) => boolean">
+      A custom function to validate connections. Overrides the built-in validation.
+    </ParamField>
+  </Expandable>
+</ParamField>
+
+### Logging Options
+
+<ParamField body="logging" type="false | ((sql: string, timing?: number) => void)" default="false">
+  A function called for every SQL query executed, receiving the SQL string and optional timing in milliseconds. Set to `false` to disable logging entirely.
+
+  ```typescript
+  logging: console.log,
+  // or:
+  logging: (sql, timing) => myLogger.debug({ sql, timing }),
+  ```
+</ParamField>
+
+<ParamField body="benchmark" type="boolean" default="false">
+  When `true`, passes query execution time in milliseconds as the second argument to the `logging` function.
+</ParamField>
+
+<ParamField body="logQueryParameters" type="boolean" default="false">
+  When `true`, includes bind parameter values in log output.
+</ParamField>
+
+### Model Defaults
+
+<ParamField body="define" type="ModelOptions">
+  Default options applied to every model defined via `sequelize.define()` or `Model.init()`. Accepts the same options as `Model.init()` except `name`, `modelName`, and `tableName`.
+
+  ```typescript
+  define: {
+    timestamps: true,
+    underscored: true,
+    freezeTableName: false,
+  }
+  ```
+</ParamField>
+
+<ParamField body="schema" type="string">
+  Default database schema to use for all models. Overrides the database's default schema.
+</ParamField>
+
+### Transaction Options
+
+<ParamField body="isolationLevel" type="IsolationLevel">
+  Default transaction isolation level. If not set, uses the database default. See [`IsolationLevel`](/api/transaction#isolationlevel-enum) for valid values.
+</ParamField>
+
+<ParamField body="transactionType" type="TransactionType" default="'DEFERRED'">
+  Default transaction type. SQLite only. See [`TransactionType`](/api/transaction#transactiontype-enum).
+</ParamField>
+
+<ParamField body="defaultTransactionNestMode" type="TransactionNestMode" default="TransactionNestMode.reuse">
+  How nested `sequelize.transaction()` calls behave when a parent transaction is already active. See [`TransactionNestMode`](/api/transaction#transactionnestmode-enum).
+</ParamField>
+
+<ParamField body="disableClsTransactions" type="boolean" default="false">
+  When `true`, disables automatic CLS (AsyncLocalStorage) transaction propagation. You must pass the transaction manually to every query.
+</ParamField>
+
+### Miscellaneous Options
+
+<ParamField body="timezone" type="string" default="'+00:00'">
+  Timezone used when converting dates from the database. Accepts `+/-HH:MM` offsets or IANA timezone names (e.g. `'America/New_York'`). Not supported by all dialects.
+</ParamField>
+
+<ParamField body="noTypeValidation" type="boolean" default="false">
+  Disable Sequelize's built-in type validators on insert/update. Useful to skip validation for legacy data.
+</ParamField>
+
+<ParamField body="omitNull" type="boolean" default="false">
+  When `true`, `null` values are omitted from `INSERT` and `UPDATE` SQL instead of being sent as `NULL`.
+</ParamField>
+
+<ParamField body="minifyAliases" type="boolean" default="false">
+  Automatically shorten generated SQL aliases. Useful for PostgreSQL which enforces a 64-character limit on identifiers.
+</ParamField>
+
+<ParamField body="quoteIdentifiers" type="boolean" default="true">
+  Whether to double-quote identifiers (table names, column names). Set to `false` for case-insensitive identifiers in PostgreSQL.
+</ParamField>
+
+<ParamField body="nullJsonStringification" type="'json' | 'sql' | 'explicit'" default="'json'">
+  Controls how JavaScript `null` is serialized for JSON columns. `'json'` stores JSON `null`; `'sql'` stores SQL `NULL`; `'explicit'` requires the caller to use `SQL_NULL` or `JSON_NULL` constants.
+</ParamField>
+
+<ParamField body="defaultTimestampPrecision" type="number | null" default="6">
+  Fractional seconds precision (0–6) for `createdAt`/`updatedAt`/`deletedAt` columns. Set to `null` to use the database default.
+</ParamField>
+
+<ParamField body="models" type="ModelStatic[]">
+  Pre-register model classes. Required when models are defined using decorators. Models defined with `Model.init()` or `sequelize.define()` are registered automatically.
+</ParamField>
+
+<ParamField body="hooks" type="Partial<SequelizeHooks>">
+  Register global hooks at construction time.
+</ParamField>
+
+<ParamField body="databaseVersion" type="string">
+  Pin the database version string. Sequelize normally detects this automatically on first connect. Useful when you want to avoid that round-trip.
+</ParamField>
+
+---
+
+## Constructor Examples
+
+<Tabs>
+  <Tab title="PostgreSQL">
+    ```typescript
+    import { Sequelize } from '@sequelize/core';
+    import { PostgresDialect } from '@sequelize/postgres';
+
+    const sequelize = new Sequelize({
+      dialect: PostgresDialect,
+      database: 'my_database',
+      user: 'postgres',
+      password: 'secret',
+      host: 'localhost',
+      port: 5432,
+      ssl: true,
+      pool: { max: 10, idle: 30_000 },
+      logging: console.log,
+    });
+    ```
+  </Tab>
+  <Tab title="MySQL">
+    ```typescript
+    import { Sequelize } from '@sequelize/core';
+    import { MySqlDialect } from '@sequelize/mysql';
+
+    const sequelize = new Sequelize({
+      dialect: MySqlDialect,
+      database: 'my_database',
+      user: 'root',
+      password: 'secret',
+      host: '127.0.0.1',
+      port: 3306,
+    });
+    ```
+  </Tab>
+  <Tab title="SQLite">
+    ```typescript
+    import { Sequelize } from '@sequelize/core';
+    import { SqliteDialect } from '@sequelize/sqlite3';
+
+    // In-memory database
+    const sequelize = new Sequelize({
+      dialect: SqliteDialect,
+      storage: ':memory:',
+    });
+
+    // Persistent file
+    const sequelize = new Sequelize({
+      dialect: SqliteDialect,
+      storage: './path/to/database.sqlite',
+    });
+    ```
+  </Tab>
+  <Tab title="MS SQL Server">
+    ```typescript
+    import { Sequelize } from '@sequelize/core';
+    import { MsSqlDialect } from '@sequelize/mssql';
+
+    const sequelize = new Sequelize({
+      dialect: MsSqlDialect,
+      server: 'localhost',
+      port: 1433,
+      database: 'my_database',
+      authentication: {
+        type: 'default',
+        options: { userName: 'sa', password: 'secret' },
+      },
+    });
+    ```
+  </Tab>
+  <Tab title="Connection URL">
+    ```typescript
+    import { Sequelize } from '@sequelize/core';
+    import { MySqlDialect } from '@sequelize/mysql';
+
+    const sequelize = new Sequelize({
+      dialect: MySqlDialect,
+      url: 'mysql://root:secret@127.0.0.1:3306/mydb',
+    });
+    ```
+  </Tab>
+</Tabs>
+
+---
+
+## Instance Methods
+
+### authenticate()
+
+```typescript
+sequelize.authenticate(options?: QueryRawOptions): Promise<void>
+```
+
+Verifies the connection to the database by executing a simple test query. Throws if the connection cannot be established.
+
+```typescript
+try {
+  await sequelize.authenticate();
+  console.log('Connection established.');
+} catch (error) {
+  console.error('Unable to connect:', error);
+}
+```
+
+---
+
+### define()
+
+```typescript
+sequelize.define<M extends Model>(
+  modelName: string,
+  attributes: ModelAttributes<M>,
+  options?: ModelOptions
+): ModelStatic<M>
+```
+
+Defines a new model and registers it with this Sequelize instance. An alternative to calling `Model.init()` directly.
+
+```typescript
+const User = sequelize.define('User', {
+  name: DataTypes.STRING,
+  email: { type: DataTypes.STRING, unique: true },
+});
+```
+
+---
+
+### sync()
+
+```typescript
+sequelize.sync(options?: SyncOptions): Promise<Sequelize>
+```
+
+Synchronizes all registered models to the database by creating or altering tables.
+
+<ParamField body="force" type="boolean" default="false">
+  When `true`, drops all tables and recreates them. **Destructive — do not use in production.**
+</ParamField>
+
+<ParamField body="alter" type="boolean | { drop: boolean }" default="false">
+  When `true`, compares each model with the current table and runs `ALTER TABLE` to bring them in sync.
+</ParamField>
+
+<ParamField body="match" type="RegExp">
+  Only sync tables whose names match this regular expression.
+</ParamField>
+
+<Warning>
+  Using `force: true` drops all data. Use migrations in production environments instead.
+</Warning>
+
+```typescript
+// Create tables that don't exist yet
+await sequelize.sync();
+
+// Drop and recreate all tables
+await sequelize.sync({ force: true });
+```
+
+---
+
+### drop()
+
+```typescript
+sequelize.drop(options?: DropOptions): Promise<void>
+```
+
+Drops all tables that are managed by this Sequelize instance.
+
+<ParamField body="cascade" type="boolean">
+  Also drop dependent objects (views, etc.). PostgreSQL only.
+</ParamField>
+
+---
+
+### transaction()
+
+```typescript
+// Managed (auto-commit/rollback)
+sequelize.transaction<T>(
+  callback: (t: Transaction) => PromiseLike<T> | T
+): Promise<T>
+
+// Managed with options
+sequelize.transaction<T>(
+  options: ManagedTransactionOptions,
+  callback: (t: Transaction) => PromiseLike<T> | T
+): Promise<T>
+```
+
+Starts a transaction and executes the callback within it. If the callback resolves, the transaction is committed. If it throws, the transaction is rolled back automatically.
+
+```typescript
+const result = await sequelize.transaction(async (t) => {
+  const user = await User.create({ name: 'Alice' }, { transaction: t });
+  await Profile.create({ userId: user.id }, { transaction: t });
+  return user;
+});
+
+// With isolation level
+await sequelize.transaction(
+  { isolationLevel: IsolationLevel.SERIALIZABLE },
+  async (t) => {
+    // ...
+  }
+);
+```
+
+<Note>
+  When CLS transactions are enabled (the default), any query executed inside the callback automatically inherits the transaction — you don't need to pass `{ transaction: t }` everywhere.
+</Note>
+
+---
+
+### query()
+
+```typescript
+sequelize.query(sql: string | { query: string; values: unknown[] }, options?: QueryRawOptions): Promise<[unknown[], unknown]>
+```
+
+Executes a raw SQL query.
+
+<ParamField body="type" type="QueryTypes">
+  The type of query. Affects how results are parsed. Common values: `QueryTypes.SELECT`, `QueryTypes.INSERT`, `QueryTypes.UPDATE`, `QueryTypes.DELETE`.
+</ParamField>
+
+<ParamField body="replacements" type="object | unknown[]">
+  Values for named (`:name`) or positional (`?`) bind parameters.
+</ParamField>
+
+<ParamField body="bind" type="object | unknown[]">
+  Values for `$name` or `$1` style bind parameters (sent separately from the query string).
+</ParamField>
+
+<ParamField body="model" type="ModelStatic">
+  Map results to instances of this model.
+</ParamField>
+
+```typescript
+const [results] = await sequelize.query(
+  'SELECT * FROM users WHERE name = :name',
+  { replacements: { name: 'Alice' }, type: QueryTypes.SELECT }
+);
+```
+
+---
+
+### close()
+
+```typescript
+sequelize.close(): Promise<void>
+```
+
+Closes all connections in the pool. After calling `close()`, the instance cannot be used to execute new queries.
+
+```typescript
+await sequelize.close();
+```
+
+---
+
+### getDialect()
+
+```typescript
+sequelize.getDialect(): string
+```
+
+Returns the name of the dialect (e.g. `'postgres'`, `'mysql'`, `'sqlite'`).
+
+---
+
+## Instance Properties
+
+<ResponseField name="dialect" type="AbstractDialect">
+  The dialect instance. Provides access to dialect-specific query generation and connection management.
+</ResponseField>
+
+<ResponseField name="options" type="NormalizedOptions">
+  The normalized options object computed from the options passed to the constructor.
+</ResponseField>
+
+<ResponseField name="rawOptions" type="Options">
+  An unmodified copy of the options passed to the constructor. Useful for cloning the instance.
+</ResponseField>
+
+<ResponseField name="models" type="ModelSetView">
+  An iterable view of all models registered with this Sequelize instance. Supports `.get(modelName)`.
+</ResponseField>
+
+<ResponseField name="pool" type="ReplicationPool">
+  The underlying connection pool. Exposes `pool.read` and `pool.write` sub-pools.
+</ResponseField>
+
+<ResponseField name="queryInterface" type="AbstractQueryInterface">
+  The dialect-specific query interface used to run DDL and DML operations.
+</ResponseField>
+
+<ResponseField name="queryGenerator" type="AbstractQueryGenerator">
+  The dialect-specific SQL generator.
+</ResponseField>
+
+---
+
+## Static Hooks
+
+The `Sequelize` class exposes static hooks that fire around instance creation:
+
+| Hook | When it fires |
+|------|--------------|
+| `beforeInit` | Before a new `Sequelize` instance is created |
+| `afterInit` | After a new `Sequelize` instance is created |
+
+```typescript
+Sequelize.beforeInit((options) => {
+  options.logging = console.log;
+});
+```

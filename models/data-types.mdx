@@ -1,0 +1,464 @@
+---
+title: "Data Types"
+description: "All data types available in the DataTypes namespace"
+keywords: ["sequelize", "datatypes", "string", "integer", "boolean", "date", "json", "uuid"]
+---
+
+All types live in the `DataTypes` namespace exported from `@sequelize/core`. Every type can be used as a class (with `new`) or invoked directly as a function — both are equivalent.
+
+```typescript
+import { DataTypes } from '@sequelize/core';
+
+// These are all equivalent:
+DataTypes.STRING
+DataTypes.STRING(255)
+new DataTypes.STRING(255)
+```
+
+<Note>
+Not all data types are supported by every dialect. When a type is not natively supported, Sequelize applies a documented fallback policy — for example, using a `CHECK` constraint to emulate a range restriction. If no fallback is available, Sequelize throws at model initialization time.
+</Note>
+
+---
+
+## String types
+
+<AccordionGroup>
+  <Accordion title="DataTypes.STRING">
+
+A variable-length string. Maps to `VARCHAR(n)` in SQL.
+
+**Options**
+
+| Option | Type | Default | Description |
+|---|---|---|---|
+| `length` | `number` | `255` | Maximum length. |
+| `binary` | `boolean` | `false` | Store as binary data (`VARCHAR BINARY`). |
+
+```typescript
+DataTypes.STRING         // VARCHAR(255)
+DataTypes.STRING(100)    // VARCHAR(100)
+DataTypes.STRING.BINARY  // VARCHAR(255) BINARY
+```
+
+  </Accordion>
+  <Accordion title="DataTypes.CHAR">
+
+A fixed-length string. Maps to `CHAR(n)`.
+
+```typescript
+DataTypes.CHAR(10)       // CHAR(10)
+DataTypes.CHAR.BINARY    // CHAR BINARY
+```
+
+  </Accordion>
+  <Accordion title="DataTypes.TEXT">
+
+An unbounded string. Maps to `TEXT`, `TINYTEXT`, `MEDIUMTEXT`, or `LONGTEXT` depending on the `length` option.
+
+**Options**
+
+| Option | Type | Values | Description |
+|---|---|---|---|
+| `length` | `string` | `'tiny'`, `'medium'`, `'long'` | Controls the storage size. Default is `TEXT`. |
+
+```typescript
+DataTypes.TEXT            // TEXT
+DataTypes.TEXT('tiny')    // TINYTEXT
+DataTypes.TEXT('medium')  // MEDIUMTEXT
+DataTypes.TEXT('long')    // LONGTEXT
+```
+
+  </Accordion>
+  <Accordion title="DataTypes.CITEXT">
+
+A case-insensitive text column. Original case is preserved but comparisons are case-insensitive. Only available in **PostgreSQL** and **SQLite**.
+
+```typescript
+DataTypes.CITEXT
+```
+
+  </Accordion>
+  <Accordion title="DataTypes.TSVECTOR (PostgreSQL)">
+
+PostgreSQL `tsvector` type for full-text search.
+
+```typescript
+DataTypes.TSVECTOR
+```
+
+  </Accordion>
+</AccordionGroup>
+
+---
+
+## Numeric types
+
+<AccordionGroup>
+  <Accordion title="Integer types">
+
+All integer types share the same options.
+
+**Options**
+
+| Option | Type | Description |
+|---|---|---|
+| `unsigned` | `boolean` | Mark the column as unsigned (MySQL/MariaDB). |
+| `zerofill` | `boolean` | Zero-pad the value to the display length (MySQL/MariaDB). |
+
+| Type | Bits | Range (signed) | SQL |
+|---|---|---|---|
+| `TINYINT` | 8 | -128 to 127 | `TINYINT` |
+| `SMALLINT` | 16 | -32,768 to 32,767 | `SMALLINT` |
+| `MEDIUMINT` | 24 | -8,388,608 to 8,388,607 | `MEDIUMINT` |
+| `INTEGER` | 32 | -2,147,483,648 to 2,147,483,647 | `INTEGER` |
+| `BIGINT` | 64 | ±9.2×10¹⁸ | `BIGINT` |
+
+```typescript
+DataTypes.INTEGER
+DataTypes.INTEGER.UNSIGNED          // unsigned INTEGER
+DataTypes.BIGINT
+DataTypes.SMALLINT({ unsigned: true })
+```
+
+<Note>
+`BIGINT` values are returned as strings from the database to avoid JavaScript precision loss. Cast to `BigInt` in application code if needed.
+</Note>
+
+  </Accordion>
+  <Accordion title="Floating-point types">
+
+**Options** (shared by `FLOAT`, `DOUBLE`, `DECIMAL`)
+
+| Option | Type | Description |
+|---|---|---|
+| `precision` | `number` | Total number of significant digits. |
+| `scale` | `number` | Digits after the decimal point. Both `precision` and `scale` must be specified together. |
+| `unsigned` | `boolean` | Unsigned constraint. |
+
+| Type | Precision | SQL |
+|---|---|---|
+| `FLOAT` | ~7 significant digits (single) | `FLOAT` |
+| `DOUBLE` | ~15 significant digits (double) | `DOUBLE PRECISION` |
+| `DECIMAL` | Exact / arbitrary | `DECIMAL(p, s)` |
+
+```typescript
+DataTypes.FLOAT
+DataTypes.DOUBLE
+DataTypes.DECIMAL(10, 2)   // DECIMAL(10, 2) — e.g. prices
+```
+
+<Warning>
+`REAL` is deprecated. Use `FLOAT` instead.
+</Warning>
+
+  </Accordion>
+</AccordionGroup>
+
+---
+
+## Date and time types
+
+<AccordionGroup>
+  <Accordion title="DataTypes.DATE">
+
+A date and time with optional sub-second precision. Maps to `DATETIME` or `TIMESTAMP`.
+
+**Options**
+
+| Option | Type | Description |
+|---|---|---|
+| `precision` | `number` | Number of fractional second digits (0–6). |
+
+```typescript
+DataTypes.DATE      // DATETIME
+DataTypes.DATE(3)   // DATETIME(3) — millisecond precision
+```
+
+Accepts `Date`, `dayjs`, or a date string / timestamp number on input.
+
+  </Accordion>
+  <Accordion title="DataTypes.DATEONLY">
+
+A date-only column with no time component. Maps to `DATE` in SQL.
+
+```typescript
+DataTypes.DATEONLY
+```
+
+Values are serialized as `YYYY-MM-DD` strings.
+
+  </Accordion>
+  <Accordion title="DataTypes.TIME">
+
+A time-only column. Maps to `TIME` or a constrained string type on dialects that lack native support.
+
+**Options**
+
+| Option | Type | Description |
+|---|---|---|
+| `precision` | `number` | Fractional second digits. |
+
+```typescript
+DataTypes.TIME
+DataTypes.TIME(3)
+```
+
+  </Accordion>
+  <Accordion title="DataTypes.NOW">
+
+A special default value that inserts the current timestamp. Not a column type — only valid as `defaultValue`.
+
+```typescript
+{
+  lastLogin: {
+    type: DataTypes.DATE,
+    defaultValue: DataTypes.NOW,
+  },
+}
+```
+
+  </Accordion>
+</AccordionGroup>
+
+---
+
+## Boolean
+
+`DataTypes.BOOLEAN` maps to a native `BOOLEAN` column when the dialect supports it, or falls back to a numeric replacement (`TINYINT(1)`, `BIT`, etc.).
+
+```typescript
+DataTypes.BOOLEAN
+```
+
+Accepted JS values: `true`, `false`.
+
+---
+
+## Binary and JSON
+
+<AccordionGroup>
+  <Accordion title="DataTypes.BLOB">
+
+Binary data. Maps to `BLOB`, `TINYBLOB`, `MEDIUMBLOB`, or `LONGBLOB`.
+
+**Options**
+
+| Option | Type | Values |
+|---|---|---|
+| `length` | `string` | `'tiny'`, `'medium'`, `'long'` |
+
+```typescript
+DataTypes.BLOB             // BLOB
+DataTypes.BLOB('tiny')     // TINYBLOB
+DataTypes.BLOB('medium')   // MEDIUMBLOB
+DataTypes.BLOB('long')     // LONGBLOB
+```
+
+Accepts `Buffer`, `string`, `Uint8Array`, or `ArrayBuffer`.
+
+  </Accordion>
+  <Accordion title="DataTypes.JSON">
+
+A JSON column. Sequelize automatically calls `JSON.stringify` on write and `JSON.parse` on read.
+
+```typescript
+DataTypes.JSON
+```
+
+Available in MySQL, MariaDB, PostgreSQL, and SQLite (with a CHECK constraint fallback).
+
+  </Accordion>
+  <Accordion title="DataTypes.JSONB (PostgreSQL)">
+
+A binary JSON column in PostgreSQL. Stored in a decomposed binary format that allows indexing.
+
+```typescript
+DataTypes.JSONB
+```
+
+  </Accordion>
+</AccordionGroup>
+
+---
+
+## UUID
+
+<AccordionGroup>
+  <Accordion title="DataTypes.UUID">
+
+A UUID column. Use with `defaultValue: DataTypes.UUIDV4` to generate UUIDs automatically.
+
+```typescript
+{
+  id: {
+    type: DataTypes.UUID,
+    defaultValue: DataTypes.UUIDV4,
+    primaryKey: true,
+  },
+}
+```
+
+  </Accordion>
+  <Accordion title="DataTypes.UUIDV1 / DataTypes.UUIDV4">
+
+Default-value helpers. Pass as `defaultValue` on a `UUID` column to auto-generate version 1 or version 4 UUIDs at the JavaScript level.
+
+```typescript
+DataTypes.UUIDV1   // generates a v1 UUID on create
+DataTypes.UUIDV4   // generates a v4 UUID on create
+```
+
+  </Accordion>
+</AccordionGroup>
+
+---
+
+## Enum
+
+`DataTypes.ENUM` maps to a native `ENUM` type or a `VARCHAR` with a CHECK constraint.
+
+```typescript
+DataTypes.ENUM('active', 'inactive', 'banned')
+```
+
+```typescript
+{
+  status: {
+    type: DataTypes.ENUM('active', 'inactive', 'banned'),
+    defaultValue: 'active',
+  },
+}
+```
+
+---
+
+## Virtual
+
+`DataTypes.VIRTUAL` declares a field that is never persisted to the database. Useful for computed properties or temporary state on an instance.
+
+```typescript
+import { DataTypes } from '@sequelize/core';
+
+{
+  fullName: {
+    type: DataTypes.VIRTUAL(DataTypes.STRING, ['firstName', 'lastName']),
+    get() {
+      return `${this.firstName} ${this.lastName}`;
+    },
+  },
+}
+```
+
+The optional first argument is the return type; the optional second is the list of source attribute dependencies.
+
+---
+
+## PostgreSQL-specific types
+
+<AccordionGroup>
+  <Accordion title="DataTypes.ARRAY">
+
+A PostgreSQL array column. The subtype can be any other DataType.
+
+```typescript
+DataTypes.ARRAY(DataTypes.STRING)    // VARCHAR[]
+DataTypes.ARRAY(DataTypes.INTEGER)   // INTEGER[]
+```
+
+  </Accordion>
+  <Accordion title="DataTypes.RANGE">
+
+A PostgreSQL range type. Pass the element subtype as the argument.
+
+```typescript
+DataTypes.RANGE(DataTypes.INTEGER)   // int4range
+DataTypes.RANGE(DataTypes.BIGINT)    // int8range
+DataTypes.RANGE(DataTypes.DECIMAL)   // numrange
+DataTypes.RANGE(DataTypes.DATE)      // tstzrange
+DataTypes.RANGE(DataTypes.DATEONLY)  // daterange
+```
+
+Values are read back as `[{ value, inclusive }, { value, inclusive }]` tuples.
+
+  </Accordion>
+  <Accordion title="DataTypes.HSTORE">
+
+A key-value store column in PostgreSQL. Values must be strings.
+
+```typescript
+DataTypes.HSTORE
+```
+
+Accepts a plain object: `{ key1: 'value1', key2: 'value2' }`.
+
+  </Accordion>
+  <Accordion title="Network address types">
+
+PostgreSQL network address types:
+
+| Type | SQL | Description |
+|---|---|---|
+| `DataTypes.CIDR` | `CIDR` | IPv4 or IPv6 network address. |
+| `DataTypes.INET` | `INET` | IPv4 or IPv6 host address. |
+| `DataTypes.MACADDR` | `MACADDR` | MAC address. |
+| `DataTypes.MACADDR8` | `MACADDR8` | MAC address (EUI-64). |
+
+```typescript
+DataTypes.INET
+DataTypes.CIDR
+DataTypes.MACADDR
+```
+
+  </Accordion>
+  <Accordion title="DataTypes.GEOMETRY / DataTypes.GEOGRAPHY">
+
+Geometric and geographic types (PostGIS / MySQL Spatial Extensions).
+
+```typescript
+DataTypes.GEOMETRY                   // any geometry
+DataTypes.GEOMETRY('POINT')          // POINT
+DataTypes.GEOMETRY('LINESTRING')     // LINESTRING
+DataTypes.GEOMETRY('POLYGON')        // POLYGON
+DataTypes.GEOMETRY('POINT', 4326)    // POINT with SRID
+
+DataTypes.GEOGRAPHY
+DataTypes.GEOGRAPHY('POINT', 4326)
+```
+
+Values follow the [GeoJSON](https://geojson.org/) format.
+
+  </Accordion>
+</AccordionGroup>
+
+---
+
+## Quick reference
+
+| Type | SQL equivalent | Notes |
+|---|---|---|
+| `STRING` | `VARCHAR(255)` | Default length 255 |
+| `CHAR` | `CHAR(n)` | Fixed length |
+| `TEXT` | `TEXT` | Unbounded |
+| `TINYINT` | `TINYINT` | 8-bit |
+| `SMALLINT` | `SMALLINT` | 16-bit |
+| `MEDIUMINT` | `MEDIUMINT` | 24-bit (MySQL) |
+| `INTEGER` | `INTEGER` | 32-bit |
+| `BIGINT` | `BIGINT` | 64-bit, returned as string |
+| `FLOAT` | `FLOAT` | Single-precision |
+| `DOUBLE` | `DOUBLE PRECISION` | Double-precision |
+| `DECIMAL` | `DECIMAL(p,s)` | Arbitrary precision |
+| `BOOLEAN` | `BOOLEAN` | |
+| `DATE` | `DATETIME` | With time |
+| `DATEONLY` | `DATE` | Date only |
+| `TIME` | `TIME` | Time only |
+| `BLOB` | `BLOB` | Binary data |
+| `JSON` | `JSON` | |
+| `JSONB` | `JSONB` | PostgreSQL only |
+| `UUID` | `UUID` / `CHAR(36)` | |
+| `ENUM` | `ENUM` | |
+| `VIRTUAL` | — | Not persisted |
+| `ARRAY` | `type[]` | PostgreSQL only |
+| `RANGE` | `range` | PostgreSQL only |
+| `HSTORE` | `HSTORE` | PostgreSQL only |
+| `GEOMETRY` | `GEOMETRY` | PostGIS / MySQL |

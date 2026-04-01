@@ -1,0 +1,414 @@
+---
+title: "Supported Dialects"
+description: "Connect Sequelize to PostgreSQL, MySQL, MariaDB, SQLite, MS SQL Server, Oracle, Snowflake, DB2, or IBM i"
+---
+
+Sequelize supports nine SQL databases through separate dialect packages. Install `@sequelize/core` plus the package for your database, then pass the dialect class to the `Sequelize` constructor.
+
+<Tabs>
+
+<Tab title="PostgreSQL">
+
+**Package:** `@sequelize/postgres`
+
+<CodeGroup>
+
+```bash npm
+npm install @sequelize/core @sequelize/postgres
+```
+
+```bash yarn
+yarn add @sequelize/core @sequelize/postgres
+```
+
+```bash pnpm
+pnpm add @sequelize/core @sequelize/postgres
+```
+
+</CodeGroup>
+
+```typescript
+import { Sequelize } from '@sequelize/core';
+import { PostgresDialect } from '@sequelize/postgres';
+
+const sequelize = new Sequelize({
+  dialect: PostgresDialect,
+  database: 'my_database',
+  user: 'my_user',
+  password: 'my_password',
+  host: 'localhost',
+  port: 5432,
+});
+```
+
+You can also pass a connection URL:
+
+```typescript
+const sequelize = new Sequelize({
+  dialect: PostgresDialect,
+  url: 'postgres://my_user:my_password@localhost:5432/my_database',
+});
+```
+
+<Tip>
+  PostgreSQL supports connecting over a UNIX socket by passing an absolute directory path as the `host` option (e.g. `host: '/var/run/postgresql'`).
+</Tip>
+
+</Tab>
+
+<Tab title="MySQL">
+
+**Package:** `@sequelize/mysql`
+
+<CodeGroup>
+
+```bash npm
+npm install @sequelize/core @sequelize/mysql
+```
+
+```bash yarn
+yarn add @sequelize/core @sequelize/mysql
+```
+
+```bash pnpm
+pnpm add @sequelize/core @sequelize/mysql
+```
+
+</CodeGroup>
+
+```typescript
+import { Sequelize } from '@sequelize/core';
+import { MySqlDialect } from '@sequelize/mysql';
+
+const sequelize = new Sequelize({
+  dialect: MySqlDialect,
+  database: 'my_database',
+  user: 'my_user',
+  password: 'my_password',
+  host: 'localhost',
+  port: 3306,
+});
+```
+
+You can also pass a connection URL:
+
+```typescript
+const sequelize = new Sequelize({
+  dialect: MySqlDialect,
+  url: 'mysql://my_user:my_password@localhost:3306/my_database',
+});
+```
+
+</Tab>
+
+<Tab title="MariaDB">
+
+**Package:** `@sequelize/mariadb`
+
+<CodeGroup>
+
+```bash npm
+npm install @sequelize/core @sequelize/mariadb
+```
+
+```bash yarn
+yarn add @sequelize/core @sequelize/mariadb
+```
+
+```bash pnpm
+pnpm add @sequelize/core @sequelize/mariadb
+```
+
+</CodeGroup>
+
+```typescript
+import { Sequelize } from '@sequelize/core';
+import { MariaDbDialect } from '@sequelize/mariadb';
+
+const sequelize = new Sequelize({
+  dialect: MariaDbDialect,
+  database: 'my_database',
+  user: 'my_user',
+  password: 'my_password',
+  host: 'localhost',
+  port: 3306,
+});
+```
+
+You can also pass a connection URL:
+
+```typescript
+const sequelize = new Sequelize({
+  dialect: MariaDbDialect,
+  url: 'mariadb://my_user:my_password@localhost:3306/my_database',
+});
+```
+
+</Tab>
+
+<Tab title="SQLite">
+
+**Package:** `@sequelize/sqlite3`
+
+<CodeGroup>
+
+```bash npm
+npm install @sequelize/core @sequelize/sqlite3
+```
+
+```bash yarn
+yarn add @sequelize/core @sequelize/sqlite3
+```
+
+```bash pnpm
+pnpm add @sequelize/core @sequelize/sqlite3
+```
+
+</CodeGroup>
+
+```typescript
+import { Sequelize } from '@sequelize/core';
+import { SqliteDialect } from '@sequelize/sqlite3';
+
+const sequelize = new Sequelize({
+  dialect: SqliteDialect,
+  storage: 'path/to/my_database.sqlite',
+});
+```
+
+<Note>
+  SQLite uses a file path via the `storage` option instead of `host` and `port`. Use `storage: ':memory:'` for an in-memory database, which is useful for tests. In-memory databases require the pool to be limited to a single connection (`pool.max: 1`) so every query shares the same in-memory state.
+</Note>
+
+```typescript
+// In-memory database for tests
+const sequelize = new Sequelize({
+  dialect: SqliteDialect,
+  storage: ':memory:',
+  pool: { max: 1 },
+});
+```
+
+</Tab>
+
+<Tab title="MS SQL Server">
+
+**Package:** `@sequelize/mssql`
+
+<CodeGroup>
+
+```bash npm
+npm install @sequelize/core @sequelize/mssql
+```
+
+```bash yarn
+yarn add @sequelize/core @sequelize/mssql
+```
+
+```bash pnpm
+pnpm add @sequelize/core @sequelize/mssql
+```
+
+</CodeGroup>
+
+```typescript
+import { Sequelize } from '@sequelize/core';
+import { MsSqlDialect } from '@sequelize/mssql';
+
+const sequelize = new Sequelize({
+  dialect: MsSqlDialect,
+  database: 'my_database',
+  authentication: {
+    type: 'default',
+    options: {
+      userName: 'my_user',
+      password: 'my_password',
+    },
+  },
+  server: 'localhost',
+  port: 1433,
+});
+```
+
+<Note>
+  The `@sequelize/mssql` package uses `tedious` as its underlying driver. Authentication is configured through the `authentication` object rather than top-level `user` and `password` options.
+</Note>
+
+</Tab>
+
+<Tab title="Oracle">
+
+**Package:** `@sequelize/oracle`
+
+<CodeGroup>
+
+```bash npm
+npm install @sequelize/core @sequelize/oracle
+```
+
+```bash yarn
+yarn add @sequelize/core @sequelize/oracle
+```
+
+```bash pnpm
+pnpm add @sequelize/core @sequelize/oracle
+```
+
+</CodeGroup>
+
+```typescript
+import { Sequelize } from '@sequelize/core';
+import { OracleDialect } from '@sequelize/oracle';
+
+const sequelize = new Sequelize({
+  dialect: OracleDialect,
+  database: 'my_database',
+  user: 'my_user',
+  password: 'my_password',
+  host: 'localhost',
+  port: 1521,
+});
+```
+
+<Note>
+  The `@sequelize/oracle` package depends on `oracledb`, which requires the Oracle Instant Client libraries to be installed on the host machine. Refer to the [oracledb installation guide](https://node-oracledb.readthedocs.io/en/latest/user_guide/installation.html) for platform-specific instructions.
+</Note>
+
+</Tab>
+
+<Tab title="Snowflake">
+
+**Package:** `@sequelize/snowflake`
+
+<CodeGroup>
+
+```bash npm
+npm install @sequelize/core @sequelize/snowflake
+```
+
+```bash yarn
+yarn add @sequelize/core @sequelize/snowflake
+```
+
+```bash pnpm
+pnpm add @sequelize/core @sequelize/snowflake
+```
+
+</CodeGroup>
+
+```typescript
+import { Sequelize } from '@sequelize/core';
+import { SnowflakeDialect } from '@sequelize/snowflake';
+
+const sequelize = new Sequelize({
+  dialect: SnowflakeDialect,
+  account: 'my_account',
+  username: 'my_user',
+  password: 'my_password',
+  database: 'my_database',
+  schema: 'my_schema',
+  warehouse: 'my_warehouse',
+  role: 'my_role',
+});
+```
+
+<Warning>
+  Snowflake support in Sequelize v7 is experimental. Some features available on other dialects may not yet be implemented.
+</Warning>
+
+</Tab>
+
+<Tab title="DB2">
+
+**Package:** `@sequelize/db2`
+
+This package targets **DB2 for Linux, Unix, and Windows** (DB2 LUW). For DB2 on IBM i, see the IBM i tab.
+
+<CodeGroup>
+
+```bash npm
+npm install @sequelize/core @sequelize/db2
+```
+
+```bash yarn
+yarn add @sequelize/core @sequelize/db2
+```
+
+```bash pnpm
+pnpm add @sequelize/core @sequelize/db2
+```
+
+</CodeGroup>
+
+```typescript
+import { Sequelize } from '@sequelize/core';
+import { Db2Dialect } from '@sequelize/db2';
+
+const sequelize = new Sequelize({
+  dialect: Db2Dialect,
+  database: 'my_database',
+  user: 'my_user',
+  password: 'my_password',
+  host: 'localhost',
+  port: 50000,
+});
+```
+
+<Note>
+  The `@sequelize/db2` package depends on `ibm_db`, which requires the IBM Data Server Driver to be installed. See the [ibm_db installation docs](https://github.com/ibmdb/node-ibm_db#installation) for details.
+</Note>
+
+</Tab>
+
+<Tab title="IBM i">
+
+**Package:** `@sequelize/db2-ibmi`
+
+This package targets **DB2 for IBM i** using an ODBC connection. For DB2 on Linux, Unix, or Windows, see the DB2 tab.
+
+<CodeGroup>
+
+```bash npm
+npm install @sequelize/core @sequelize/db2-ibmi
+```
+
+```bash yarn
+yarn add @sequelize/core @sequelize/db2-ibmi
+```
+
+```bash pnpm
+pnpm add @sequelize/core @sequelize/db2-ibmi
+```
+
+</CodeGroup>
+
+```typescript
+import { Sequelize } from '@sequelize/core';
+import { IBMiDialect } from '@sequelize/db2-ibmi';
+
+const sequelize = new Sequelize({
+  dialect: IBMiDialect,
+  odbcConnectionString: 'DSN=my_dsn;UID=my_user;PWD=my_password;',
+});
+```
+
+<Note>
+  IBM i connections are established over ODBC. You must configure an ODBC DSN on the host before connecting. The `@sequelize/db2-ibmi` package depends on the `odbc` npm package, which in turn requires an ODBC driver manager and the IBM i Access ODBC driver.
+</Note>
+
+</Tab>
+
+</Tabs>
+
+## Choosing between dialects
+
+All dialects share the same Sequelize API. The dialect package only affects connection setup, data type mapping, and any database-specific SQL features. You can write model definitions and queries that work across dialects by sticking to the common subset of `DataTypes` and avoiding dialect-specific raw SQL.
+
+<CardGroup cols={2}>
+  <Card title="Getting started" icon="rocket" href="/getting-started">
+    Step-by-step guide to your first Sequelize connection and query.
+  </Card>
+  <Card title="Defining models" icon="table" href="/models/defining-models">
+    Map your database tables to Sequelize model classes.
+  </Card>
+</CardGroup>

@@ -1,0 +1,502 @@
+---
+title: "Association Methods"
+description: "API reference for Sequelize association types"
+---
+
+Associations define the relationships between models. Sequelize supports four association types, each of which adds methods to the source model and optionally creates or modifies foreign key attributes.
+
+<Note>
+  All four association methods are called as static methods on the **source** model. The source model is the one calling the method; the target model is the one passed as the first argument.
+</Note>
+
+---
+
+## Overview
+
+| Method | Relationship | Foreign Key Location |
+|--------|-------------|---------------------|
+| `Source.hasOne(Target)` | One-to-one | On `Target` |
+| `Source.belongsTo(Target)` | One-to-one / Many-to-one | On `Source` |
+| `Source.hasMany(Target)` | One-to-many | On `Target` |
+| `Source.belongsToMany(Target, { through })` | Many-to-many | In a junction table |
+
+```typescript
+// One User has many Posts (foreign key `userId` added to Post)
+User.hasMany(Post, { foreignKey: 'userId', as: 'posts' });
+
+// Post belongs to User (same FK, other side)
+Post.belongsTo(User, { foreignKey: 'userId', as: 'author' });
+```
+
+---
+
+## BelongsTo
+
+```typescript
+Source.belongsTo(Target, options?: BelongsToOptions): BelongsToAssociation
+```
+
+Adds a foreign key to the **source** model and singular association mixins. Use this for the "many side" of a one-to-many relationship, or for both sides of a one-to-one relationship.
+
+### Options
+
+<ParamField body="foreignKey" type="string | ForeignKeyOptions">
+  The name of the foreign key attribute on the **source** model. Defaults to `targetName + TargetPrimaryKey` (e.g. `userId`).
+</ParamField>
+
+<ParamField body="targetKey" type="string">
+  The attribute on the **target** model that the foreign key references. Defaults to the target's primary key.
+</ParamField>
+
+<ParamField body="as" type="string | { singular: string; plural: string }">
+  The alias for this association. Determines the method names added to the source model. Required for self-associations and when the same pair of models is associated multiple times.
+</ParamField>
+
+<ParamField body="onDelete" type="'CASCADE' | 'SET NULL' | 'NO ACTION' | 'RESTRICT' | 'SET DEFAULT'">
+  Action when the referenced row is deleted. Defaults to `'SET NULL'` when the FK is nullable, `'CASCADE'` otherwise.
+</ParamField>
+
+<ParamField body="onUpdate" type="string" default="'CASCADE'">
+  Action when the referenced key is updated.
+</ParamField>
+
+<ParamField body="foreignKeyConstraints" type="boolean" default="true">
+  Whether to add a `FOREIGN KEY` constraint to the database.
+</ParamField>
+
+<ParamField body="scope" type="Record<string, unknown>">
+  Additional conditions added to all association queries.
+</ParamField>
+
+<ParamField body="inverse" type="{ type: 'hasOne' | 'hasMany'; as?: string }">
+  Automatically defines the inverse association on the target model.
+</ParamField>
+
+### Instance Methods Added
+
+`belongsTo` adds the following methods to **source** instances. Replace `Association` with the alias (or singular model name):
+
+<ResponseField name="getAssociation(options?)" type="Promise<Target | null>">
+  Fetches the associated target instance.
+</ResponseField>
+
+<ResponseField name="setAssociation(target, options?)" type="Promise<void>">
+  Sets the foreign key to point to `target`. Pass `null` to clear the association.
+</ResponseField>
+
+<ResponseField name="createAssociation(values, options?)" type="Promise<Target>">
+  Creates a new target instance and sets the foreign key.
+</ResponseField>
+
+### Example
+
+```typescript
+User.hasMany(Post, { foreignKey: 'authorId', as: 'posts' });
+Post.belongsTo(User, { foreignKey: 'authorId', as: 'author' });
+
+// Usage
+const post = await Post.findByPk(1);
+const author = await post.getAuthor();        // getAuthor()
+await post.setAuthor(user);                   // setAuthor()
+const newUser = await post.createAuthor({     // createAuthor()
+  name: 'Ghost Writer',
+  email: 'ghost@example.com',
+});
+```
+
+---
+
+## HasOne
+
+```typescript
+Source.hasOne(Target, options?: HasOneOptions): HasOneAssociation
+```
+
+Adds a foreign key to the **target** model and singular association mixins to the source. Represents the "one side" of a one-to-one relationship when the FK lives on the target.
+
+### Options
+
+<ParamField body="foreignKey" type="string | ForeignKeyOptions">
+  The name of the foreign key attribute on the **target** model. Defaults to `sourceName + SourcePrimaryKey` (e.g. `userId`).
+</ParamField>
+
+<ParamField body="sourceKey" type="string">
+  The attribute on the **source** model that the foreign key references. Defaults to the source's primary key.
+</ParamField>
+
+<ParamField body="as" type="string">
+  The alias for this association.
+</ParamField>
+
+<ParamField body="onDelete" type="string" default="'SET NULL'">
+  Action when the source row is deleted.
+</ParamField>
+
+<ParamField body="onUpdate" type="string" default="'CASCADE'">
+  Action when the source key is updated.
+</ParamField>
+
+<ParamField body="foreignKeyConstraints" type="boolean" default="true">
+  Whether to add a database-level `FOREIGN KEY` constraint.
+</ParamField>
+
+<ParamField body="scope" type="Record<string, unknown>">
+  Additional conditions added to all association queries.
+</ParamField>
+
+<ParamField body="inverse" type="{ type: 'belongsTo'; as?: string }">
+  Automatically defines the inverse `belongsTo` on the target model.
+</ParamField>
+
+### Instance Methods Added
+
+<ResponseField name="getAssociation(options?)" type="Promise<Target | null>">
+  Fetches the associated target instance.
+</ResponseField>
+
+<ResponseField name="setAssociation(target, options?)" type="Promise<void>">
+  Associates this source with the given target by writing the FK on the target.
+</ResponseField>
+
+<ResponseField name="createAssociation(values, options?)" type="Promise<Target>">
+  Creates a new target instance associated to this source.
+</ResponseField>
+
+### Example
+
+```typescript
+User.hasOne(Profile, { foreignKey: 'userId', as: 'profile' });
+Profile.belongsTo(User, { foreignKey: 'userId', as: 'user' });
+
+const user = await User.findByPk(1);
+const profile = await user.getProfile();
+await user.setProfile(profile);
+const newProfile = await user.createProfile({ bio: 'Hello!' });
+```
+
+---
+
+## HasMany
+
+```typescript
+Source.hasMany(Target, options?: HasManyOptions): HasManyAssociation
+```
+
+Adds a foreign key to the **target** model and plural association mixins to the source. Represents the "one side" of a one-to-many relationship.
+
+### Options
+
+<ParamField body="foreignKey" type="string | ForeignKeyOptions">
+  The name of the foreign key attribute on the **target** model. Defaults to `sourceName + SourcePrimaryKey`.
+</ParamField>
+
+<ParamField body="sourceKey" type="string">
+  The attribute on the **source** model referenced by the foreign key. Defaults to the source's primary key.
+</ParamField>
+
+<ParamField body="as" type="string | { singular: string; plural: string }">
+  The alias. Determines plural method names (e.g. `getPosts`, `setPosts`, etc.).
+</ParamField>
+
+<ParamField body="onDelete" type="string" default="'SET NULL'">
+  Action when the source row is deleted.
+</ParamField>
+
+<ParamField body="onUpdate" type="string" default="'CASCADE'">
+  Action when the source key is updated.
+</ParamField>
+
+<ParamField body="scope" type="Record<string, unknown>">
+  Additional conditions scoped to all association queries.
+</ParamField>
+
+<ParamField body="foreignKeyConstraints" type="boolean" default="true">
+  Whether to add a `FOREIGN KEY` constraint.
+</ParamField>
+
+<ParamField body="inverse" type="{ as?: string }">
+  Automatically defines the inverse `belongsTo` on the target.
+</ParamField>
+
+### Instance Methods Added
+
+Replace `Associations` with the plural alias (or pluralized model name):
+
+<ResponseField name="getAssociations(options?)" type="Promise<Target[]>">
+  Fetches all associated target instances.
+</ResponseField>
+
+<ResponseField name="setAssociations(targets, options?)" type="Promise<void>">
+  Replaces all associations. Removes all existing FKs and sets the FK on the provided targets. Pass an empty array to remove all.
+</ResponseField>
+
+<ResponseField name="addAssociation(target, options?)" type="Promise<void>">
+  Associates a single target without affecting other associations.
+</ResponseField>
+
+<ResponseField name="addAssociations(targets, options?)" type="Promise<void>">
+  Associates multiple targets without affecting other existing associations.
+</ResponseField>
+
+<ResponseField name="removeAssociation(target, options?)" type="Promise<void>">
+  Removes the association for a single target (sets its FK to null).
+</ResponseField>
+
+<ResponseField name="removeAssociations(targets, options?)" type="Promise<void>">
+  Removes associations for multiple targets.
+</ResponseField>
+
+<ResponseField name="hasAssociation(target, options?)" type="Promise<boolean>">
+  Returns `true` if the given target is associated.
+</ResponseField>
+
+<ResponseField name="hasAssociations(targets, options?)" type="Promise<boolean>">
+  Returns `true` if all given targets are associated.
+</ResponseField>
+
+<ResponseField name="countAssociations(options?)" type="Promise<number>">
+  Returns the number of associated targets.
+</ResponseField>
+
+<ResponseField name="createAssociation(values, options?)" type="Promise<Target>">
+  Creates a new target and associates it with this source.
+</ResponseField>
+
+### Example
+
+```typescript
+User.hasMany(Post, { foreignKey: 'authorId', as: 'posts' });
+Post.belongsTo(User, { foreignKey: 'authorId', as: 'author' });
+
+const user = await User.findByPk(1);
+
+// Get all posts by this user
+const posts = await user.getPosts({ where: { published: true } });
+
+// Add a post
+await user.addPost(post);
+
+// Replace all posts
+await user.setPosts([post1, post2]);
+
+// Remove a post (sets authorId to null)
+await user.removePost(post);
+
+// Count
+const count = await user.countPosts();
+
+// Create and associate
+const newPost = await user.createPost({ title: 'New Post' });
+```
+
+---
+
+## BelongsToMany
+
+```typescript
+Source.belongsToMany(Target, options: BelongsToManyOptions): BelongsToManyAssociation
+```
+
+Creates a many-to-many association through a junction (join) table. Adds plural association mixins to both models. The junction table is created automatically when using `sync()`.
+
+### Options
+
+<ParamField body="through" type="string | ModelStatic | ThroughOptions" required>
+  The junction table. Pass a string for a table name (Sequelize creates a model automatically), or a `ModelStatic` reference for full control.
+</ParamField>
+
+<ParamField body="foreignKey" type="string | ForeignKeyOptions">
+  The FK on the junction table that references the **source** model. Defaults to `sourceName + SourcePrimaryKey`.
+</ParamField>
+
+<ParamField body="otherKey" type="string | ForeignKeyOptions">
+  The FK on the junction table that references the **target** model. Defaults to `targetName + TargetPrimaryKey`.
+</ParamField>
+
+<ParamField body="as" type="string | { singular: string; plural: string }">
+  The alias used for method names.
+</ParamField>
+
+<ParamField body="onDelete" type="string" default="'CASCADE'">
+  Action on the junction table row when a source or target row is deleted.
+</ParamField>
+
+<ParamField body="onUpdate" type="string" default="'CASCADE'">
+  Action when the referenced primary key is updated.
+</ParamField>
+
+<ParamField body="scope" type="Record<string, unknown>">
+  Additional conditions applied to all queries against the target model.
+</ParamField>
+
+<ParamField body="through.scope" type="Record<string, unknown>">
+  Additional conditions applied to the junction table rows.
+</ParamField>
+
+<ParamField body="timestamps" type="boolean">
+  Whether the junction table should have `createdAt`/`updatedAt` columns. Defaults to the Sequelize `define.timestamps` setting.
+</ParamField>
+
+### Instance Methods Added
+
+<ResponseField name="getAssociations(options?)" type="Promise<Target[]>">
+  Fetches all associated targets.
+</ResponseField>
+
+<ResponseField name="setAssociations(targets, options?)" type="Promise<void>">
+  Replaces all associations in the junction table. Deletes removed rows and inserts new ones.
+</ResponseField>
+
+<ResponseField name="addAssociation(target, options?)" type="Promise<void>">
+  Inserts a row into the junction table.
+</ResponseField>
+
+<ResponseField name="addAssociations(targets, options?)" type="Promise<void>">
+  Inserts multiple rows into the junction table.
+</ResponseField>
+
+<ResponseField name="removeAssociation(target, options?)" type="Promise<void>">
+  Deletes the junction table row for the given target.
+</ResponseField>
+
+<ResponseField name="removeAssociations(targets, options?)" type="Promise<void>">
+  Deletes junction table rows for multiple targets.
+</ResponseField>
+
+<ResponseField name="hasAssociation(target, options?)" type="Promise<boolean>">
+  Returns `true` if a junction row exists for the target.
+</ResponseField>
+
+<ResponseField name="hasAssociations(targets, options?)" type="Promise<boolean>">
+  Returns `true` if junction rows exist for all given targets.
+</ResponseField>
+
+<ResponseField name="countAssociations(options?)" type="Promise<number>">
+  Counts the number of junction rows.
+</ResponseField>
+
+<ResponseField name="createAssociation(values, options?)" type="Promise<Target>">
+  Creates a new target instance and creates the junction row.
+</ResponseField>
+
+### Example
+
+```typescript
+// Using a string for the junction table name
+Post.belongsToMany(Tag, { through: 'PostTags', as: 'tags' });
+Tag.belongsToMany(Post, { through: 'PostTags', as: 'posts' });
+
+// Using a model for the junction table (to add extra columns)
+class PostTag extends Model {}
+PostTag.init({
+  order: DataTypes.INTEGER,
+  addedAt: DataTypes.DATE,
+}, { sequelize });
+
+Post.belongsToMany(Tag, { through: PostTag, as: 'tags' });
+Tag.belongsToMany(Post, { through: PostTag, as: 'posts' });
+
+// Usage
+const post = await Post.findByPk(1);
+const tags = await post.getTags();
+await post.addTag(tag);
+await post.setTags([tag1, tag2]);
+await post.removeTag(tag);
+const count = await post.countTags();
+
+// Create a tag and associate it in one step
+const newTag = await post.createTag({ name: 'typescript' });
+```
+
+---
+
+## Eager Loading (include)
+
+All `findAll`, `findOne`, and `findByPk` calls support eager loading associated models:
+
+```typescript
+const users = await User.findAll({
+  include: [
+    {
+      association: 'posts',     // use the alias
+      where: { published: true },
+      required: false,          // LEFT JOIN (default is INNER JOIN when where is set)
+    },
+    {
+      association: 'profile',
+    }
+  ]
+});
+
+// Access the loaded associations
+for (const user of users) {
+  console.log(user.posts);   // Post[]
+  console.log(user.profile); // Profile | null
+}
+```
+
+---
+
+## Common Patterns
+
+<Tabs>
+  <Tab title="One-to-Many">
+    ```typescript
+    // Author has many Books
+    Author.hasMany(Book, { foreignKey: 'authorId', as: 'books' });
+    Book.belongsTo(Author, { foreignKey: 'authorId', as: 'author' });
+
+    // Query books with their author
+    const books = await Book.findAll({
+      include: ['author'],
+      order: [['title', 'ASC']],
+    });
+    ```
+  </Tab>
+  <Tab title="Many-to-Many">
+    ```typescript
+    // Student belongs to many Courses, Courses have many Students
+    Student.belongsToMany(Course, { through: 'Enrollments' });
+    Course.belongsToMany(Student, { through: 'Enrollments' });
+
+    const student = await Student.findByPk(1);
+    const courses = await student.getCourses();
+    await student.addCourse(mathCourse);
+    ```
+  </Tab>
+  <Tab title="Self-Association">
+    ```typescript
+    // Employee manages other Employees
+    Employee.hasMany(Employee, { as: 'subordinates', foreignKey: 'managerId' });
+    Employee.belongsTo(Employee, { as: 'manager', foreignKey: 'managerId' });
+
+    const manager = await Employee.findByPk(1, {
+      include: [{ association: 'subordinates' }],
+    });
+    ```
+  </Tab>
+  <Tab title="Through model extras">
+    ```typescript
+    class UserRole extends Model {
+      declare grantedAt: Date;
+    }
+    UserRole.init({ grantedAt: DataTypes.DATE }, { sequelize });
+
+    User.belongsToMany(Role, { through: UserRole, as: 'roles' });
+    Role.belongsToMany(User, { through: UserRole, as: 'users' });
+
+    // Set with through table data
+    await user.addRole(adminRole, {
+      through: { grantedAt: new Date() },
+    });
+
+    // Eager load including junction table data
+    const userWithRoles = await User.findByPk(1, {
+      include: [{
+        association: 'roles',
+        through: { attributes: ['grantedAt'] },
+      }]
+    });
+    ```
+  </Tab>
+</Tabs>

@@ -1,0 +1,267 @@
+---
+title: "Hooks (Lifecycle Events)"
+description: "Execute custom code at key points in the model and query lifecycle"
+---
+
+Hooks (also called lifecycle events) are functions that are called before or after specific operations, such as creating a record, running a query, or validating a model. They let you inject logic — like hashing passwords, sending notifications, or logging — without modifying the core operation.
+
+## How hooks work
+
+Hooks are registered on a **model** or on the **Sequelize instance**. When Sequelize performs an operation that has a hook, it calls all registered listeners for that hook name in the order they were added. Listeners can be async (returning a Promise) and Sequelize will await them sequentially.
+
+Any error thrown inside a hook propagates to the caller and causes the operation to fail. In write operations (create, update, destroy), this also triggers a rollback if the operation is running inside a transaction.
+
+## Model-level hooks
+
+Model hooks fire around operations on a specific model's rows.
+
+### Instance hooks
+
+These fire for single-row operations:
+
+| Hook | Fires |
+|---|---|
+| `beforeValidate` | Before validation runs |
+| `afterValidate` | After validation succeeds |
+| `validationFailed` | After validation fails |
+| `beforeCreate` | Before `INSERT` for new records |
+| `afterCreate` | After `INSERT` for new records |
+| `beforeUpdate` | Before `UPDATE` on an instance |
+| `afterUpdate` | After `UPDATE` on an instance |
+| `beforeSave` | Before `INSERT` or `UPDATE` (covers both create and update) |
+| `afterSave` | After `INSERT` or `UPDATE` |
+| `beforeDestroy` | Before `DELETE` on an instance |
+| `afterDestroy` | After `DELETE` on an instance |
+| `beforeRestore` | Before restoring a paranoid-deleted record |
+| `afterRestore` | After restoring a paranoid-deleted record |
+| `beforeUpsert` | Before an upsert operation |
+| `afterUpsert` | After an upsert operation |
+
+### Bulk hooks
+
+These fire for operations that affect multiple rows at once:
+
+| Hook | Fires |
+|---|---|
+| `beforeBulkCreate` | Before `Model.bulkCreate()` |
+| `afterBulkCreate` | After `Model.bulkCreate()` |
+| `beforeBulkUpdate` | Before `Model.update()` (class method) |
+| `afterBulkUpdate` | After `Model.update()` (class method) |
+| `beforeBulkDestroy` | Before `Model.destroy()` (class method) |
+| `afterBulkDestroy` | After `Model.destroy()` (class method) |
+| `beforeDestroyMany` | Before destroying multiple instances individually |
+| `afterDestroyMany` | After destroying multiple instances individually |
+
+### Query hooks
+
+| Hook | Fires |
+|---|---|
+| `beforeFind` | Before any `SELECT` query |
+| `afterFind` | After any `SELECT` query, receives results |
+| `beforeCount` | Before `Model.count()` |
+
+### Schema hooks
+
+| Hook | Fires |
+|---|---|
+| `beforeSync` | Before `Model.sync()` |
+| `afterSync` | After `Model.sync()` |
+| `beforeAssociate` | Before an association is defined |
+| `afterAssociate` | After an association is defined |
+
+## Sequelize-level hooks
+
+These hooks fire on the Sequelize instance and apply globally across all models.
+
+| Hook | Fires |
+|---|---|
+| `beforeDefine` | Before a model class is defined |
+| `afterDefine` | After a model class is defined |
+| `beforeConnect` | Before a connection is created |
+| `afterConnect` | After a connection is created |
+| `beforeDisconnect` | Before a connection is closed |
+| `afterDisconnect` | After a connection is closed |
+| `beforeQuery` | Before any raw query is executed |
+| `afterQuery` | After any raw query is executed |
+| `beforeBulkSync` | Before `sequelize.sync()` |
+| `afterBulkSync` | After `sequelize.sync()` |
+| `beforePoolAcquire` | Before a connection is acquired from the pool |
+| `afterPoolAcquire` | After a connection is acquired from the pool |
+
+<Note>
+  Model-level hooks are also forwarded to the Sequelize instance's hook system. A listener added to `sequelize.hooks` for a model hook name (like `beforeCreate`) receives events from all models.
+</Note>
+
+## Adding hooks in `Model.init()`
+
+The most common way to register hooks is directly in the model definition using the `hooks` option:
+
+```typescript
+import { Model, DataTypes } from '@sequelize/core';
+import bcrypt from 'bcrypt';
+
+class User extends Model {
+  declare name: string;
+  declare password: string;
+}
+
+User.init(
+  {
+    name: DataTypes.STRING,
+    password: DataTypes.STRING,
+  },
+  {
+    sequelize,
+    hooks: {
+      async beforeCreate(user) {
+        user.password = await bcrypt.hash(user.password, 10);
+      },
+      async beforeUpdate(user) {
+        if (user.changed('password')) {
+          user.password = await bcrypt.hash(user.password, 10);
+        }
+      },
+    },
+  },
+);
+```
+
+## Adding hooks with `addHook`
+
+You can also add hooks after model initialization using `Model.addHook()` (static method) or `sequelize.addHook()`.
+
+<Tabs>
+  <Tab title="Model.addHook">
+    ```typescript
+    // Add a named hook on the User model
+    User.addHook('afterCreate', 'sendWelcomeEmail', async (user) => {
+      await emailService.sendWelcome(user.email);
+    });
+    ```
+  </Tab>
+  <Tab title="sequelize.addHook">
+    ```typescript
+    // Add a global hook on the Sequelize instance
+    sequelize.addHook('beforeQuery', (options) => {
+      console.log('[SQL]', options.query);
+    });
+    ```
+  </Tab>
+</Tabs>
+
+The second argument to `addHook` is an optional **name** for the hook listener. Named hooks can be removed by name later (see below).
+
+You can also use the shorthand methods directly on the model or instance — Sequelize exposes every hook name as a method:
+
+```typescript
+User.beforeCreate(async (user) => {
+  user.password = await bcrypt.hash(user.password, 10);
+});
+
+sequelize.afterQuery((options, query) => {
+  metrics.recordQuery(query.sql, query.duration);
+});
+```
+
+## Removing hooks
+
+Use `removeHook` to remove a specific listener. You must either pass a named hook or the original callback reference.
+
+```typescript
+// Remove by name
+User.removeHook('afterCreate', 'sendWelcomeEmail');
+
+// Remove by function reference
+const fn = async (user) => { /* ... */ };
+User.addHook('afterCreate', fn);
+User.removeHook('afterCreate', fn);
+```
+
+Alternatively, `addHook` returns a disposer function you can call to remove the hook:
+
+```typescript
+const remove = User.addHook('afterCreate', async (user) => {
+  await emailService.sendWelcome(user.email);
+});
+
+// Later:
+remove();
+```
+
+## Async hooks
+
+Hooks can return a `Promise`. Sequelize awaits each hook before proceeding to the next one or executing the database operation.
+
+```typescript
+User.addHook('beforeCreate', async (user) => {
+  // This is awaited before the INSERT runs.
+  await auditLog.record('user.pre_create', { name: user.name });
+});
+```
+
+<Warning>
+  Hooks are called sequentially, not in parallel. Each hook must resolve before the next one starts. Avoid performing expensive or unrelated async work in hot-path hooks like `beforeFind`.
+</Warning>
+
+## Skipping hooks
+
+Specific hooks can be skipped for individual operations using the `noHooks` option:
+
+```typescript
+// Skip all hooks
+await User.create({ name: 'Admin' }, { noHooks: true });
+
+// Skip specific hooks
+await User.create({ name: 'Admin' }, { noHooks: ['beforeValidate', 'afterCreate'] });
+
+// Run only specific hooks (skip all others)
+await User.create({ name: 'Admin' }, { noHooks: { except: ['beforeCreate'] } });
+```
+
+## Practical examples
+
+### Hash password before save
+
+```typescript
+import bcrypt from 'bcrypt';
+
+User.addHook('beforeSave', async (user) => {
+  if (user.changed('password')) {
+    user.password = await bcrypt.hash(user.password, 12);
+  }
+});
+```
+
+### Log all queries
+
+```typescript
+sequelize.addHook('afterQuery', (options, query) => {
+  if (options.benchmark) {
+    console.log(`[${query.duration}ms] ${query.sql}`);
+  }
+});
+```
+
+### Set `updatedBy` from request context
+
+```typescript
+import { AsyncLocalStorage } from 'node:async_hooks';
+
+const currentUser = new AsyncLocalStorage<string>();
+
+User.addHook('beforeUpdate', (instance) => {
+  const userId = currentUser.getStore();
+  if (userId) {
+    instance.set('updatedBy', userId);
+  }
+});
+```
+
+<CardGroup cols={2}>
+  <Card title="Transactions" icon="arrows-rotate" href="/transactions">
+    Wrap operations in ACID transactions for consistency.
+  </Card>
+  <Card title="Scopes" icon="filter" href="/scopes">
+    Define reusable query conditions on your models.
+  </Card>
+</CardGroup>

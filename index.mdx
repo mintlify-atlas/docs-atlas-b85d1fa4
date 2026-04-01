@@ -1,97 +1,79 @@
 ---
-title: "Introduction"
-description: "Welcome to the new home for your documentation"
+title: "Sequelize — Node.js ORM"
+description: "A feature-rich, promise-based Node.js ORM for PostgreSQL, MySQL, MariaDB, SQLite, MS SQL Server, Oracle, Snowflake, DB2, and IBM i."
 ---
 
-## Setting up
+Sequelize is a modern TypeScript and Node.js ORM that supports multiple SQL databases. With solid transaction support, associations, eager and lazy loading, read replication, and a rich query builder, Sequelize lets you work with your database using JavaScript or TypeScript instead of raw SQL.
 
-Get your documentation site up and running in minutes.
-
-<Card
-  title="Start here"
-  icon="rocket"
-  href="/quickstart"
-  horizontal
->
-  Follow our three step quickstart guide.
-</Card>
-
-## Make it yours
-
-Design a docs site that looks great and empowers your users.
-
-<Columns cols={2}>
-  <Card
-    title="Edit locally"
-    icon="pen-to-square"
-    href="/development"
-  >
-    Edit your docs locally and preview them in real time.
+<CardGroup cols={2}>
+  <Card title="Get Started" icon="rocket" href="/getting-started">
+    Install Sequelize and connect to your database in minutes
   </Card>
-  <Card
-    title="Customize your site"
-    icon="palette"
-    href="/essentials/settings"
-  >
-    Customize the design and colors of your site to match your brand.
+  <Card title="Dialects" icon="database" href="/dialects">
+    PostgreSQL, MySQL, MariaDB, SQLite, MSSQL, Oracle, Snowflake, DB2, and IBM i
   </Card>
-    <Card
-    title="Set up navigation"
-    icon="map"
-    href="/essentials/navigation"
-  >
-    Organize your docs to help users find what they need and succeed with your product.
+  <Card title="Models" icon="table" href="/models/defining-models">
+    Define models with attributes, data types, and validations
   </Card>
-  <Card
-    title="API documentation"
-    icon="terminal"
-    href="/api-reference/introduction"
-  >
-    Auto-generate API documentation from OpenAPI specifications.
+  <Card title="Querying" icon="magnifying-glass" href="/querying/basics">
+    Create, read, update, and delete records with a fluent API
   </Card>
-</Columns>
+  <Card title="Associations" icon="link" href="/associations/overview">
+    BelongsTo, HasOne, HasMany, and BelongsToMany relationships
+  </Card>
+  <Card title="Transactions" icon="rotate" href="/transactions">
+    ACID-compliant transactions with savepoints and CLS support
+  </Card>
+  <Card title="CLI & Migrations" icon="terminal" href="/cli/overview">
+    Generate and run database migrations and seeders
+  </Card>
+  <Card title="API Reference" icon="code" href="/api/sequelize">
+    Full API documentation for the Sequelize class and all exports
+  </Card>
+</CardGroup>
 
-## Create beautiful pages
+## Quick example
 
-Everything you need to create world-class documentation.
+```typescript
+import { Sequelize, DataTypes, Model } from '@sequelize/core';
+import { PostgresDialect } from '@sequelize/postgres';
 
-<Columns cols={2}>
-  <Card
-    title="Write with MDX"
-    icon="pen-fancy"
-    href="/essentials/markdown"
-  >
-    Use MDX to style your docs pages.
-  </Card>
-  <Card
-    title="Code samples"
-    icon="code"
-    href="/essentials/code"
-  >
-    Add sample code to demonstrate how to use your product.
-  </Card>
-  <Card
-    title="Images"
-    icon="image"
-    href="/essentials/images"
-  >
-    Display images and other media.
-  </Card>
-  <Card
-    title="Reusable snippets"
-    icon="recycle"
-    href="/essentials/reusable-snippets"
-  >
-    Write once and reuse across your docs.
-  </Card>
-</Columns>
+const sequelize = new Sequelize({
+  dialect: PostgresDialect,
+  database: 'mydb',
+  user: 'myuser',
+  password: 'mypassword',
+  host: 'localhost',
+});
 
-## Need inspiration?
+class User extends Model {}
 
-<Card
-  title="See complete examples"
-  icon="stars"
-  href="https://mintlify.com/customers"
->
-  Browse our showcase of exceptional documentation sites.
-</Card>
+User.init(
+  {
+    firstName: DataTypes.STRING,
+    lastName: DataTypes.STRING,
+  },
+  { sequelize, modelName: 'User' },
+);
+
+await sequelize.sync();
+const user = await User.create({ firstName: 'Jane', lastName: 'Doe' });
+console.log(user.firstName); // 'Jane'
+```
+
+## Key features
+
+<CardGroup cols={2}>
+  <Card title="Multi-dialect" icon="server">
+    Connect to PostgreSQL, MySQL, MariaDB, SQLite, MS SQL Server, Oracle DB, Snowflake, DB2, and IBM i from the same API
+  </Card>
+  <Card title="TypeScript-first" icon="brackets-curly">
+    Full TypeScript support with class decorators, type inference, and accurate typings for all public APIs
+  </Card>
+  <Card title="Rich associations" icon="diagram-project">
+    Model relationships with BelongsTo, HasOne, HasMany, and BelongsToMany — with eager and lazy loading
+  </Card>
+  <Card title="Transactions & hooks" icon="shield-check">
+    ACID transactions, savepoints, CLS-based automatic transaction passing, and lifecycle hooks
+  </Card>
+</CardGroup>

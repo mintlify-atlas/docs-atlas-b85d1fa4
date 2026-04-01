@@ -1,0 +1,247 @@
+---
+title: "Raw Queries"
+description: "Execute raw SQL queries when the query builder isn't enough"
+keywords: ["sequelize", "raw query", "query", "QueryTypes", "replacements", "bind parameters", "SQL"]
+---
+
+When the built-in model methods and operators are not sufficient, you can execute arbitrary SQL using `sequelize.query()`.
+
+## Basic usage
+
+`sequelize.query()` accepts a SQL string and an optional options object. By default it returns `[results, metadata]`, where `metadata` contains the number of affected rows, returned IDs, and similar driver-specific information.
+
+```typescript
+const [results, metadata] = await sequelize.query('SELECT * FROM users');
+```
+
+Destructuring the metadata is rarely needed for `SELECT` queries. Pass `type: QueryTypes.SELECT` to get back only the rows array:
+
+```typescript
+import { QueryTypes } from '@sequelize/core';
+
+const users = await sequelize.query('SELECT * FROM users', {
+  type: QueryTypes.SELECT,
+});
+// users is User[] (plain objects, not model instances)
+```
+
+---
+
+## QueryTypes
+
+Import `QueryTypes` from `@sequelize/core`. The type controls how results are formatted before being returned.
+
+```typescript
+import { QueryTypes } from '@sequelize/core';
+```
+
+| QueryType | Description |
+|---|---|
+| `QueryTypes.SELECT` | Returns only the rows array. |
+| `QueryTypes.INSERT` | Returns `[lastInsertId, rowCount]`. |
+| `QueryTypes.UPDATE` | Returns `[results, rowCount]`. |
+| `QueryTypes.DELETE` / `DESTROY` | Returns nothing meaningful. |
+| `QueryTypes.UPSERT` | Returns `[instance, created]` (dialect-dependent). |
+| `QueryTypes.RAW` | Default. Returns `[results, metadata]`. |
+| `QueryTypes.SHOWTABLES` | Returns a list of table names. |
+| `QueryTypes.DESCRIBE` | Returns a column description object. |
+
+```typescript
+// INSERT
+const [id, count] = await sequelize.query(
+  'INSERT INTO tags (name) VALUES (?)',
+  {
+    replacements: ['javascript'],
+    type: QueryTypes.INSERT,
+  },
+);
+
+// UPDATE
+await sequelize.query(
+  'UPDATE users SET status = ? WHERE last_login < ?',
+  {
+    replacements: ['inactive', new Date('2024-01-01')],
+    type: QueryTypes.UPDATE,
+  },
+);
+```
+
+---
+
+## Replacements
+
+Replacements are **positional** (`?`) or **named** (`:paramName`) placeholders. Sequelize escapes the values before inlining them in the SQL string, protecting against SQL injection.
+
+<Note>
+Replacements are only available through `sequelize.query()` — not `sequelize.queryRaw()`. Sequelize processes them before sending the query to the database driver.
+</Note>
+
+### Positional replacements
+
+Use `?` placeholders and pass an array of values:
+
+```typescript
+const users = await sequelize.query(
+  'SELECT * FROM users WHERE age > ? AND status = ?',
+  {
+    replacements: [18, 'active'],
+    type: QueryTypes.SELECT,
+  },
+);
+```
+
+### Named replacements
+
+Use `:paramName` placeholders and pass a plain object:
+
+```typescript
+const users = await sequelize.query(
+  'SELECT * FROM users WHERE age > :minAge AND status = :status',
+  {
+    replacements: { minAge: 18, status: 'active' },
+    type: QueryTypes.SELECT,
+  },
+);
+```
+
+---
+
+## Bind parameters
+
+Bind parameters are passed **separately** to the database driver and never inlined into the SQL string. This provides an additional layer of safety and is preferred for performance-sensitive code.
+
+Use `$1, $2, ...` for positional bind parameters, or `$paramName` for named ones.
+
+<Note>
+Bind parameters are used through `sequelize.queryRaw()` (or `sequelize.query()` with the `bind` option). The exact syntax may vary between dialects.
+</Note>
+
+### Positional bind parameters
+
+```typescript
+const users = await sequelize.query(
+  'SELECT * FROM users WHERE age > $1 AND status = $2',
+  {
+    bind: [18, 'active'],
+    type: QueryTypes.SELECT,
+  },
+);
+```
+
+### Named bind parameters
+
+```typescript
+const users = await sequelize.query(
+  'SELECT * FROM users WHERE age > $minAge AND status = $status',
+  {
+    bind: { minAge: 18, status: 'active' },
+    type: QueryTypes.SELECT,
+  },
+);
+```
+
+---
+
+## Returning model instances
+
+To get back full model instances instead of plain objects, pass the `model` option:
+
+```typescript
+const users = await sequelize.query(
+  'SELECT * FROM users WHERE created_at > :since',
+  {
+    replacements: { since: new Date('2025-01-01') },
+    model: User,
+    type: QueryTypes.SELECT,
+    mapToModel: true,  // map raw column names to attribute names
+  },
+);
+
+// users is User[] — real model instances with methods
+console.log(users[0] instanceof User); // true
+```
+
+Without `model`, results are plain JavaScript objects:
+
+```typescript
+const rows = await sequelize.query('SELECT id, username FROM users', {
+  type: QueryTypes.SELECT,
+});
+// rows is Array<{ id: number; username: string }>
+```
+
+---
+
+## Nesting results
+
+When a `SELECT` query uses dot-notation aliases (e.g., `user.name`), pass `nest: true` to convert them into nested objects automatically.
+
+```typescript
+const rows = await sequelize.query(
+  `SELECT u.id AS "user.id",
+          u.username AS "user.username",
+          p.id AS "post.id",
+          p.title AS "post.title"
+   FROM users u
+   JOIN posts p ON p.author_id = u.id
+   LIMIT 10`,
+  {
+    type: QueryTypes.SELECT,
+    nest: true,
+  },
+);
+
+// rows[0] = { user: { id: 1, username: 'alice' }, post: { id: 7, title: '...' } }
+```
+
+---
+
+## When to use raw queries
+
+Use raw queries when:
+
+- You need a database-specific SQL feature (window functions, CTEs, full-text search, custom functions).
+- You are migrating existing SQL and want to port it incrementally.
+- Query builder performance is a bottleneck and you know the exact SQL you want.
+- You need a `UNION`, subquery, or complex join that the ORM makes awkward.
+
+Prefer the model-based API when:
+
+- You want automatic attribute mapping, validation, and hooks.
+- You want dialect portability.
+- You want TypeScript type inference on results.
+
+<Tip>
+Raw queries bypass Sequelize hooks and validations entirely. If you need hooks to fire (e.g., `afterCreate`), use the standard model methods instead.
+</Tip>
+
+---
+
+## Full example
+
+```typescript
+import { QueryTypes } from '@sequelize/core';
+
+// CTE with pagination — hard to express with the query builder
+const topAuthors = await sequelize.query(
+  `WITH post_counts AS (
+     SELECT author_id, COUNT(*) AS cnt
+     FROM posts
+     WHERE published = :published
+     GROUP BY author_id
+   )
+   SELECT u.id, u.username, pc.cnt AS post_count
+   FROM users u
+   JOIN post_counts pc ON pc.author_id = u.id
+   ORDER BY pc.cnt DESC
+   LIMIT :limit OFFSET :offset`,
+  {
+    replacements: { published: true, limit: 10, offset: 0 },
+    type: QueryTypes.SELECT,
+  },
+);
+
+for (const row of topAuthors) {
+  console.log(`${row.username}: ${row.post_count} posts`);
+}
+```

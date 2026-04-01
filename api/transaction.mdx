@@ -1,0 +1,368 @@
+---
+title: "Transaction Class"
+description: "API reference for Sequelize transactions"
+---
+
+Transactions allow you to execute a series of queries as a single atomic unit. If any query fails, all changes within the transaction are rolled back. Sequelize supports both managed transactions (automatic commit/rollback) and unmanaged transactions (manual control).
+
+---
+
+## sequelize.transaction()
+
+The primary way to use transactions is through the managed `sequelize.transaction()` helper:
+
+```typescript
+// Managed transaction — automatically committed on success, rolled back on error
+const result = await sequelize.transaction(async (t) => {
+  const user = await User.create({ name: 'Alice' }, { transaction: t });
+  await Profile.create({ userId: user.id }, { transaction: t });
+  return user;
+});
+```
+
+### Signature
+
+```typescript
+sequelize.transaction<T>(
+  callback: (t: Transaction) => PromiseLike<T> | T
+): Promise<T>
+
+sequelize.transaction<T>(
+  options: ManagedTransactionOptions,
+  callback: (t: Transaction) => PromiseLike<T> | T
+): Promise<T>
+```
+
+<ParamField body="options" type="ManagedTransactionOptions">
+  <Expandable title="ManagedTransactionOptions properties">
+    <ParamField body="isolationLevel" type="IsolationLevel">
+      The isolation level for this transaction. Defaults to the `isolationLevel` set in the Sequelize constructor, or the database default if none was set.
+    </ParamField>
+    <ParamField body="type" type="TransactionType">
+      The transaction type. SQLite only.
+    </ParamField>
+    <ParamField body="readOnly" type="boolean" default="false">
+      When `true`, Sequelize may route the transaction to a read replica.
+    </ParamField>
+    <ParamField body="nestMode" type="TransactionNestMode">
+      Controls the behavior when `sequelize.transaction()` is called inside another active transaction. Overrides `defaultTransactionNestMode` for this call only.
+    </ParamField>
+    <ParamField body="constraintChecking" type="ConstraintChecking">
+      Controls when constraints are checked. PostgreSQL only.
+    </ParamField>
+    <ParamField body="logging" type="false | Function">
+      Override the logging function for this transaction.
+    </ParamField>
+  </Expandable>
+</ParamField>
+
+<Note>
+  When CLS (AsyncLocalStorage) transactions are enabled (the default), any query executed inside the callback automatically inherits the transaction. You don't need to pass `{ transaction: t }` explicitly.
+</Note>
+
+---
+
+## CLS Transactions
+
+By default, Sequelize uses Node.js `AsyncLocalStorage` to propagate transactions through async contexts. This means any query executed inside `sequelize.transaction()` is automatically enrolled in the transaction:
+
+```typescript
+await sequelize.transaction(async () => {
+  // No need to pass { transaction: t } — CLS handles it automatically
+  await User.create({ name: 'Bob' });
+  await Post.create({ title: 'Hello' });
+});
+```
+
+To disable this behavior, set `disableClsTransactions: true` in the Sequelize constructor.
+
+---
+
+## Unmanaged Transactions
+
+For manual control over commit and rollback:
+
+```typescript
+const t = await sequelize.startUnmanagedTransaction();
+
+try {
+  await User.create({ name: 'Charlie' }, { transaction: t });
+  await t.commit();
+} catch (error) {
+  await t.rollback();
+  throw error;
+}
+```
+
+<Warning>
+  With unmanaged transactions you are responsible for always calling either `commit()` or `rollback()`. Forgetting to do so will leave the connection in an unusable state and exhaust your connection pool.
+</Warning>
+
+---
+
+## Transaction Class
+
+### Properties
+
+<ResponseField name="id" type="string">
+  A unique identifier for the transaction. For nested transactions (savepoints), this is the same as the parent transaction's `id`.
+</ResponseField>
+
+<ResponseField name="options" type="NormalizedTransactionOptions">
+  The normalized options this transaction was created with (isolation level, readOnly, etc.).
+</ResponseField>
+
+<ResponseField name="parent" type="Transaction | null">
+  The parent transaction if this is a savepoint, otherwise `null`.
+</ResponseField>
+
+<ResponseField name="finished" type="'commit' | 'rollback' | undefined">
+  The current completion state of the transaction. `undefined` while still in progress.
+</ResponseField>
+
+<ResponseField name="rootTransaction" type="Transaction">
+  The topmost transaction in a nested chain. Returns `this` if not nested.
+</ResponseField>
+
+---
+
+### commit()
+
+```typescript
+transaction.commit(): Promise<void>
+```
+
+Commits the transaction. Throws if the transaction has already been committed or rolled back.
+
+For savepoint transactions (nested), calling `commit()` is a no-op — the savepoint is released by the parent transaction committing.
+
+---
+
+### rollback()
+
+```typescript
+transaction.rollback(): Promise<void>
+```
+
+Rolls back (aborts) the transaction. For savepoint transactions, rolls back to the savepoint.
+
+---
+
+### afterCommit()
+
+```typescript
+transaction.afterCommit(callback: (t: Transaction) => void | Promise<void>): this
+```
+
+Registers a callback to run after the transaction is successfully committed. Multiple callbacks can be registered; they execute in registration order.
+
+```typescript
+await sequelize.transaction(async (t) => {
+  const user = await User.create({ name: 'Dave' }, { transaction: t });
+
+  t.afterCommit(() => {
+    sendWelcomeEmail(user.email);
+  });
+});
+```
+
+---
+
+### afterRollback()
+
+```typescript
+transaction.afterRollback(callback: (t: Transaction) => void | Promise<void>): this
+```
+
+Registers a callback to run after the transaction is rolled back.
+
+---
+
+### afterTransaction()
+
+```typescript
+transaction.afterTransaction(callback: (t: Transaction) => void | Promise<void>): this
+```
+
+Registers a callback to run after the transaction completes, regardless of whether it was committed or rolled back.
+
+---
+
+## IsolationLevel Enum
+
+Controls the degree to which the transaction is isolated from the effects of other concurrent transactions.
+
+```typescript
+import { IsolationLevel } from '@sequelize/core';
+```
+
+| Value | SQL | Description |
+|-------|-----|-------------|
+| `IsolationLevel.READ_UNCOMMITTED` | `READ UNCOMMITTED` | Allows dirty reads. The lowest isolation level. |
+| `IsolationLevel.READ_COMMITTED` | `READ COMMITTED` | Prevents dirty reads. Default in most databases. |
+| `IsolationLevel.REPEATABLE_READ` | `REPEATABLE READ` | Prevents dirty and non-repeatable reads. |
+| `IsolationLevel.SERIALIZABLE` | `SERIALIZABLE` | Full isolation. Prevents dirty reads, non-repeatable reads, and phantom reads. |
+
+```typescript
+await sequelize.transaction(
+  { isolationLevel: IsolationLevel.SERIALIZABLE },
+  async (t) => {
+    // ...
+  }
+);
+```
+
+---
+
+## TransactionNestMode Enum
+
+Controls what happens when `sequelize.transaction()` is called inside another active transaction.
+
+```typescript
+import { TransactionNestMode } from '@sequelize/core';
+```
+
+| Value | Behavior |
+|-------|----------|
+| `TransactionNestMode.reuse` | **(Default)** Reuses the parent transaction if options are compatible. Throws if incompatible. |
+| `TransactionNestMode.savepoint` | Creates a savepoint on the parent transaction. Rolls back to the savepoint on error. |
+| `TransactionNestMode.separate` | Always starts a new transaction on a separate connection. Use with caution — can cause deadlocks. |
+
+```typescript
+// Change the default nest mode for all transactions
+const sequelize = new Sequelize({
+  dialect: PostgresDialect,
+  defaultTransactionNestMode: TransactionNestMode.savepoint,
+  // ...
+});
+
+// Override for a single call
+await sequelize.transaction(
+  { nestMode: TransactionNestMode.savepoint },
+  async (t) => { /* ... */ }
+);
+```
+
+---
+
+## TransactionType Enum
+
+SQLite only. Controls when the database file lock is acquired.
+
+```typescript
+import { TransactionType } from '@sequelize/core';
+```
+
+| Value | Behavior |
+|-------|----------|
+| `TransactionType.DEFERRED` | **(Default)** Lock is not acquired until the first read or write. |
+| `TransactionType.IMMEDIATE` | Acquires a reserved lock immediately, allowing reads but blocking other writes. |
+| `TransactionType.EXCLUSIVE` | Acquires an exclusive lock immediately, blocking all other connections. |
+
+---
+
+## Lock Enum
+
+Row-level locking options used with `findAll`, `findOne`, etc.
+
+```typescript
+import { Lock } from '@sequelize/core';
+
+const users = await User.findAll({
+  where: { id: [1, 2, 3] },
+  transaction: t,
+  lock: Lock.UPDATE,
+});
+```
+
+| Value | SQL | Description |
+|-------|-----|-------------|
+| `Lock.UPDATE` | `FOR UPDATE` | Locks rows for update. |
+| `Lock.SHARE` | `FOR SHARE` | Locks rows for share (allows concurrent reads). |
+| `Lock.KEY_SHARE` | `FOR KEY SHARE` | Postgres 9.3+. Locks key columns only. |
+| `Lock.NO_KEY_UPDATE` | `FOR NO KEY UPDATE` | Postgres 9.3+. Locks non-key columns. |
+
+---
+
+## Examples
+
+<Tabs>
+  <Tab title="Managed (CLS)">
+    ```typescript
+    // CLS propagates the transaction automatically
+    await sequelize.transaction(async () => {
+      const order = await Order.create({ userId: 1, total: 99.99 });
+      await OrderItem.bulkCreate([
+        { orderId: order.id, productId: 5, qty: 2 },
+        { orderId: order.id, productId: 8, qty: 1 },
+      ]);
+      // Automatically committed if no error is thrown
+    });
+    ```
+  </Tab>
+  <Tab title="Managed (manual pass)">
+    ```typescript
+    // Disable CLS and pass t manually
+    const sequelize = new Sequelize({ disableClsTransactions: true, ... });
+
+    await sequelize.transaction(async (t) => {
+      const order = await Order.create(
+        { userId: 1, total: 99.99 },
+        { transaction: t }
+      );
+      await OrderItem.bulkCreate(
+        [{ orderId: order.id, productId: 5, qty: 2 }],
+        { transaction: t }
+      );
+    });
+    ```
+  </Tab>
+  <Tab title="Unmanaged">
+    ```typescript
+    import { IsolationLevel, literal } from '@sequelize/core';
+
+    const t = await sequelize.startUnmanagedTransaction({
+      isolationLevel: IsolationLevel.REPEATABLE_READ,
+    });
+
+    try {
+      await User.update({ balance: literal('balance - 100') }, {
+        where: { id: fromUserId },
+        transaction: t,
+      });
+      await User.update({ balance: literal('balance + 100') }, {
+        where: { id: toUserId },
+        transaction: t,
+      });
+      await t.commit();
+    } catch (err) {
+      await t.rollback();
+      throw err;
+    }
+    ```
+  </Tab>
+  <Tab title="Savepoints">
+    ```typescript
+    await sequelize.transaction(
+      { nestMode: TransactionNestMode.savepoint },
+      async (outerT) => {
+        await User.create({ name: 'Eve' }, { transaction: outerT });
+
+        try {
+          await sequelize.transaction(
+            { nestMode: TransactionNestMode.savepoint },
+            async (innerT) => {
+              await User.create({ name: 'INVALID' }, { transaction: innerT });
+              throw new Error('Rollback inner only');
+            }
+          );
+        } catch {
+          // Inner rolled back to savepoint; outer still active
+        }
+
+        // 'Eve' is still created, 'INVALID' is not
+      }
+    );
+    ```
+  </Tab>
+</Tabs>

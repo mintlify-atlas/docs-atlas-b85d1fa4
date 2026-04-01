@@ -1,0 +1,359 @@
+---
+title: "Validations & Constraints"
+description: "Add validation rules to model attributes"
+keywords: ["sequelize", "validation", "validator", "constraints", "allowNull", "unique"]
+---
+
+Sequelize has two distinct mechanisms for enforcing data integrity:
+
+- **Validations** run in JavaScript, before any SQL is sent. Sequelize uses [validator.js](https://github.com/validatorjs/validator.js) as the underlying library.
+- **Constraints** are enforced by the database engine itself (`NOT NULL`, `UNIQUE`, etc.).
+
+<Note>
+Validations only run when you call `Model.create()`, `instance.save()`, or `instance.validate()`. Bulk operations like `Model.bulkCreate()` skip per-row validations by default — pass `{ validate: true }` to enable them.
+</Note>
+
+## Validations vs constraints
+
+| | Validations | Constraints |
+|---|---|---|
+| Where | JavaScript (Sequelize) | Database |
+| When | Before SQL is sent | During SQL execution |
+| Error type | `ValidationError` | Database error (may be wrapped) |
+| Example | `isEmail`, `len`, custom functions | `NOT NULL`, `UNIQUE` |
+| Can be skipped | Yes (`{ validate: false }`) | No |
+
+Using both is recommended: validations give you clear error messages, constraints provide a database-level safety net.
+
+## Built-in validators (validator.js)
+
+Place validators in the `validate` key of an attribute's options. Each key is a validator name, and the value is either `true` or an array of arguments.
+
+```typescript
+{
+  email: {
+    type: DataTypes.STRING,
+    validate: {
+      isEmail: true,
+    },
+  },
+  website: {
+    type: DataTypes.STRING,
+    validate: {
+      isUrl: true,
+    },
+  },
+  age: {
+    type: DataTypes.INTEGER,
+    validate: {
+      isInt: true,
+      min: 0,
+      max: 150,
+    },
+  },
+}
+```
+
+### Available built-in validators
+
+<AccordionGroup>
+  <Accordion title="String validators">
+
+| Validator | Arguments | Description |
+|---|---|---|
+| `isAlpha` | — | Only letters (a–z, A–Z). |
+| `isAlphanumeric` | — | Only letters and digits. |
+| `isEmail` | — | Valid email address. |
+| `isUrl` | — | Valid URL. |
+| `isIP` | `'4'` or `'6'` | IPv4 or IPv6 address. |
+| `isCreditCard` | — | Valid credit card number. |
+| `isUUID` | `3`, `4`, or `5` | Valid UUID of the given version. |
+| `isUppercase` | — | All uppercase. |
+| `isLowercase` | — | All lowercase. |
+| `notEmpty` | — | Not an empty string. |
+| `contains` | `string` | Must contain the substring. |
+| `notContains` | `string` | Must not contain the substring. |
+| `len` | `[min, max]` | String length within range. |
+| `isIn` | `[[...values]]` | Value must be one of the array. |
+| `notIn` | `[[...values]]` | Value must not be one of the array. |
+| `is` | `[/regex/, 'flags']` | Match a regular expression. |
+| `not` | `[/regex/, 'flags']` | Must not match a regular expression. |
+
+  </Accordion>
+  <Accordion title="Numeric validators">
+
+| Validator | Arguments | Description |
+|---|---|---|
+| `isInt` | — | Must be an integer. |
+| `isFloat` | — | Must be a float. |
+| `isDecimal` | — | Must be a decimal number. |
+| `min` | `number` | Minimum value. |
+| `max` | `number` | Maximum value. |
+
+  </Accordion>
+  <Accordion title="Date validators">
+
+| Validator | Arguments | Description |
+|---|---|---|
+| `isDate` | — | Valid date string. |
+| `isBefore` | `'YYYY-MM-DD'` | Must be before the given date. |
+| `isAfter` | `'YYYY-MM-DD'` | Must be after the given date. |
+
+  </Accordion>
+  <Accordion title="Presence validators">
+
+| Validator | Arguments | Description |
+|---|---|---|
+| `notNull` | — | Must not be null. |
+| `notEmpty` | — | Must not be an empty string. |
+
+<Note>
+`notNull` in the `validate` block is a Sequelize-level check. The database-level equivalent is `allowNull: false` in the attribute options.
+</Note>
+
+  </Accordion>
+</AccordionGroup>
+
+## Custom validators
+
+A custom validator is a function that throws if validation fails. It receives the attribute's current value as its argument.
+
+```typescript
+{
+  age: {
+    type: DataTypes.INTEGER,
+    validate: {
+      isEven(value: number) {
+        if (value % 2 !== 0) {
+          throw new Error('Age must be an even number.');
+        }
+      },
+    },
+  },
+}
+```
+
+To use a custom error message with a built-in validator, pass an object with a `msg` property:
+
+```typescript
+{
+  email: {
+    type: DataTypes.STRING,
+    validate: {
+      isEmail: {
+        msg: 'Please provide a valid email address.',
+      },
+    },
+  },
+}
+```
+
+## Custom async validators
+
+Return a `Promise` or accept a Node-style callback to write asynchronous validators.
+
+```typescript
+{
+  username: {
+    type: DataTypes.STRING,
+    validate: {
+      async isUniqueInExternalSystem(value: string) {
+        const taken = await externalApi.isUsernameTaken(value);
+        if (taken) {
+          throw new Error('Username is already taken.');
+        }
+      },
+    },
+  },
+}
+```
+
+## Model-level validators
+
+Model-level validators run once per `save()` call and have access to all attributes via `this`. Define them in the `validate` option of `ModelOptions`.
+
+```typescript
+User.init(
+  {
+    startDate: { type: DataTypes.DATEONLY },
+    endDate:   { type: DataTypes.DATEONLY },
+  },
+  {
+    sequelize,
+    validate: {
+      datesInOrder() {
+        if (this.startDate > this.endDate) {
+          throw new Error('startDate must be before endDate.');
+        }
+      },
+    },
+  },
+);
+```
+
+With the decorator approach, use the `@ModelValidator` decorator:
+
+```typescript
+import { ModelValidator } from '@sequelize/core/decorators-legacy';
+
+class Event extends Model<InferAttributes<Event>, InferCreationAttributes<Event>> {
+  declare startDate: string;
+  declare endDate: string;
+
+  @ModelValidator
+  validateDates() {
+    if (this.startDate > this.endDate) {
+      throw new Error('startDate must be before endDate.');
+    }
+  }
+}
+```
+
+## A model with multiple validators
+
+```typescript
+import {
+  Model,
+  InferAttributes,
+  InferCreationAttributes,
+  CreationOptional,
+  DataTypes,
+} from '@sequelize/core';
+
+class User extends Model<
+  InferAttributes<User>,
+  InferCreationAttributes<User>
+> {
+  declare id: CreationOptional<number>;
+  declare username: string;
+  declare email: string;
+  declare age: number;
+  declare website: string | null;
+}
+
+User.init(
+  {
+    id: {
+      type: DataTypes.INTEGER,
+      primaryKey: true,
+      autoIncrement: true,
+    },
+    username: {
+      type: DataTypes.STRING(50),
+      allowNull: false,       // DB constraint
+      unique: true,           // DB constraint
+      validate: {
+        notEmpty: true,       // Sequelize validation
+        len: [3, 50],
+        isAlphanumeric: true,
+      },
+    },
+    email: {
+      type: DataTypes.STRING,
+      allowNull: false,
+      validate: {
+        isEmail: {
+          msg: 'Must be a valid email address.',
+        },
+        notEmpty: true,
+      },
+    },
+    age: {
+      type: DataTypes.INTEGER,
+      allowNull: false,
+      validate: {
+        isInt: true,
+        min: 13,
+        max: 120,
+      },
+    },
+    website: {
+      type: DataTypes.STRING,
+      allowNull: true,
+      validate: {
+        isUrl: true,
+      },
+    },
+  },
+  {
+    sequelize,
+    validate: {
+      // model-wide: no website if age < 18
+      ageGate() {
+        if (this.age < 18 && this.website != null) {
+          throw new Error('Users under 18 cannot set a website.');
+        }
+      },
+    },
+  },
+);
+```
+
+## ValidationError
+
+When one or more validations fail, Sequelize throws a `ValidationError` containing an array of `ValidationErrorItem` objects.
+
+```typescript
+import { ValidationError, ValidationErrorItem } from '@sequelize/core';
+
+try {
+  await User.create({ username: 'x', email: 'not-an-email', age: 10 });
+} catch (err) {
+  if (err instanceof ValidationError) {
+    for (const item of err.errors) {
+      console.log(item.path);      // attribute name
+      console.log(item.message);   // error message
+      console.log(item.type);      // 'Validation error', 'notNull Violation', etc.
+      console.log(item.value);     // the invalid value
+    }
+  }
+}
+```
+
+## Database-level constraints
+
+Constraints are declared in the attribute options and result in SQL `DDL` clauses being added to the `CREATE TABLE` statement (or enforced by the database independently of Sequelize).
+
+### allowNull: false
+
+Adds a `NOT NULL` constraint to the column and also runs a pre-SQL null check.
+
+```typescript
+{
+  email: {
+    type: DataTypes.STRING,
+    allowNull: false,    // -> NOT NULL in SQL
+  }
+}
+```
+
+### unique: true
+
+Adds a `UNIQUE` constraint. Pass a string to create a named composite unique index:
+
+```typescript
+// Single column unique
+{ email: { type: DataTypes.STRING, unique: true } }
+
+// Composite unique on (firstName, lastName)
+{
+  firstName: { type: DataTypes.STRING, unique: 'fullname_unique' },
+  lastName:  { type: DataTypes.STRING, unique: 'fullname_unique' },
+}
+```
+
+### primaryKey and autoIncrement
+
+```typescript
+{
+  id: {
+    type: DataTypes.INTEGER,
+    primaryKey: true,
+    autoIncrement: true,
+  }
+}
+```
+
+<Tip>
+Combine both validations and constraints for the best developer experience: validations produce friendly error messages before any SQL is sent, while constraints protect the database in case validations are bypassed.
+</Tip>

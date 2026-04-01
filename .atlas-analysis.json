@@ -1,28 +1,11 @@
 {
-  "$schema": "https://mintlify.com/docs.json",
-  "name": "Sequelize",
+  "projectType": "sdk-library",
+  "projectName": "Sequelize",
+  "projectDescription": "A feature-rich, promise-based Node.js ORM for PostgreSQL, MySQL, MariaDB, SQLite, MS SQL Server, Oracle, Snowflake, DB2, and IBM i with TypeScript support.",
   "theme": "palm",
-  "colors": {
-    "primary": "#3c74c4",
-    "light": "#2d3f6f",
-    "dark": "#53b2e3"
-  },
-  "favicon": "https://media.brand.dev/83a74cb1-888e-4d69-a49a-d9c88b1f9c41.png",
-  "logo": {
-    "light": "https://media.brand.dev/67f72df9-4045-4c30-90ac-c8fd98d0a32b.svg",
-    "dark": "https://media.brand.dev/67f72df9-4045-4c30-90ac-c8fd98d0a32b.svg"
-  },
-  "navbar": {
-    "primary": {
-      "type": "github",
-      "href": "https://github.com/sequelize/sequelize"
-    }
-  },
-  "footer": {
-    "socials": {
-      "github": "https://github.com/sequelize/sequelize"
-    }
-  },
+  "primaryColor": "#3c74c4",
+  "lightColor": "#2d3f6f",
+  "darkColor": "#53b2e3",
   "navigation": {
     "tabs": [
       {
@@ -106,5 +89,29 @@
         ]
       }
     ]
-  }
+  },
+  "keyFeatures": [
+    "Multi-dialect support: PostgreSQL, MySQL, MariaDB, SQLite, MSSQL, Oracle, Snowflake, DB2, IBM i",
+    "Full TypeScript support with decorators and type inference",
+    "Rich association system: BelongsTo, HasOne, HasMany, BelongsToMany",
+    "Robust transaction support with savepoints and CLS",
+    "Lifecycle hooks for models and queries",
+    "Model validation and instance methods",
+    "Eager and lazy loading of associations",
+    "Scopes for reusable query conditions",
+    "Connection pooling and read replication",
+    "CLI for migrations and seeders"
+  ],
+  "publicApiSurface": [
+    "Sequelize (class)",
+    "Model (class)",
+    "DataTypes (namespace)",
+    "Transaction (class)",
+    "Op (operators namespace)",
+    "fn(), col(), literal(), where() (expression builders)",
+    "BelongsTo, HasOne, HasMany, BelongsToMany (associations)",
+    "ValidationError, DatabaseError, ConnectionError (errors)",
+    "@Table, @Column, @HasMany, @BelongsTo (decorators)",
+    "@sequelize/cli (migration/seed commands)"
+  ]
 }

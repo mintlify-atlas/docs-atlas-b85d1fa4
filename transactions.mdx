@@ -1,0 +1,243 @@
+---
+title: "Transactions"
+description: "Use ACID transactions to ensure data consistency"
+---
+
+Transactions let you group multiple database operations into a single atomic unit. Either all operations succeed and are committed, or any failure triggers a rollback that undoes every change in the group. Sequelize supports both managed and unmanaged transactions.
+
+## Managed transactions
+
+The recommended approach is a **managed transaction**, where Sequelize automatically commits if your callback resolves or rolls back if it throws.
+
+```typescript
+import { sequelize } from './sequelize';
+
+const result = await sequelize.transaction(async (t) => {
+  const user = await User.create(
+    { name: 'Alice', balance: 1000 },
+    { transaction: t },
+  );
+
+  await Account.create(
+    { userId: user.id, type: 'checking' },
+    { transaction: t },
+  );
+
+  return user;
+});
+// If we reach here, the transaction was committed.
+// `result` is the return value of the callback.
+```
+
+<Note>
+  If the callback throws (or returns a rejected Promise), Sequelize rolls back the transaction automatically. You do not need to call `t.rollback()` yourself.
+</Note>
+
+## Unmanaged transactions
+
+With an **unmanaged transaction** you create the transaction object yourself and must call `commit()` or `rollback()` explicitly.
+
+```typescript
+const t = await sequelize.transaction();
+
+try {
+  await User.create({ name: 'Bob' }, { transaction: t });
+  await Order.create({ userId: 1, total: 42 }, { transaction: t });
+
+  await t.commit();
+} catch (error) {
+  await t.rollback();
+  throw error;
+}
+```
+
+<Warning>
+  Always call `t.rollback()` in the `catch` block when using unmanaged transactions. Forgetting to roll back leaves the database connection in an open transaction state and will exhaust your connection pool.
+</Warning>
+
+## Passing the transaction to queries
+
+Every query that should participate in the transaction must receive `{ transaction: t }` as an option. This applies to all model methods: `findAll`, `findOne`, `create`, `update`, `destroy`, `bulkCreate`, and association methods.
+
+```typescript
+await sequelize.transaction(async (t) => {
+  // Reads
+  const users = await User.findAll({ where: { active: true }, transaction: t });
+
+  // Writes
+  await User.update({ lastSeen: new Date() }, { where: { active: true }, transaction: t });
+
+  // Associations
+  const post = await Post.findByPk(1, { transaction: t });
+  await post.addTag(someTag, { transaction: t });
+});
+```
+
+## Automatic transactions with CLS
+
+Sequelize supports **AsyncLocalStorage** (CLS — Continuation Local Storage) to propagate the current transaction automatically. When this is enabled, any query executed within the managed transaction callback inherits the transaction without you passing `{ transaction: t }` manually.
+
+CLS is active by default unless you set `disableClsTransactions: true` in the Sequelize constructor.
+
+```typescript
+// CLS is active by default — no need to pass { transaction: t }
+await sequelize.transaction(async () => {
+  await User.create({ name: 'Carol' });   // automatically uses the transaction
+  await Order.create({ userId: 99 });     // same transaction
+});
+```
+
+To explicitly opt a query out of the ambient transaction, pass `{ transaction: null }`:
+
+```typescript
+await sequelize.transaction(async () => {
+  await AuditLog.create({ event: 'signup' }, { transaction: null }); // committed independently
+});
+```
+
+## Transaction isolation levels
+
+You can set the isolation level per transaction using the `isolationLevel` option:
+
+```typescript
+import { IsolationLevel } from '@sequelize/core';
+
+await sequelize.transaction(
+  { isolationLevel: IsolationLevel.SERIALIZABLE },
+  async (t) => {
+    // ...
+  },
+);
+```
+
+The available isolation levels are:
+
+| Level | Constant |
+|---|---|
+| `READ UNCOMMITTED` | `IsolationLevel.READ_UNCOMMITTED` |
+| `READ COMMITTED` | `IsolationLevel.READ_COMMITTED` |
+| `REPEATABLE READ` | `IsolationLevel.REPEATABLE_READ` |
+| `SERIALIZABLE` | `IsolationLevel.SERIALIZABLE` |
+
+You can set a global default in the Sequelize constructor:
+
+```typescript
+const sequelize = new Sequelize({
+  dialect: PostgresDialect,
+  // ...
+  isolationLevel: IsolationLevel.READ_COMMITTED,
+});
+```
+
+## Savepoints (nested transactions)
+
+When you call `sequelize.transaction()` inside an existing transaction, the behaviour depends on the `nestMode` option. This is controlled by the `TransactionNestMode` enum:
+
+```typescript
+import { TransactionNestMode } from '@sequelize/core';
+```
+
+| Mode | Behaviour |
+|---|---|
+| `TransactionNestMode.reuse` | Reuses the parent transaction if options are compatible. **Default.** |
+| `TransactionNestMode.savepoint` | Creates a SQL `SAVEPOINT` inside the parent transaction. |
+| `TransactionNestMode.separate` | Opens a new transaction on a separate connection. Use with caution — can cause deadlocks. |
+
+```typescript
+await sequelize.transaction(async (outer) => {
+  await User.create({ name: 'Dave' }, { transaction: outer });
+
+  // Creates a SAVEPOINT inside `outer`
+  await sequelize.transaction(
+    { nestMode: TransactionNestMode.savepoint },
+    async (inner) => {
+      await Order.create({ userId: 1 }, { transaction: inner });
+      // If this throws, only the savepoint is rolled back.
+      // `outer` is still active.
+    },
+  );
+});
+```
+
+## The `afterCommit` hook
+
+A transaction exposes an `afterCommit` method so you can schedule side effects (emails, cache invalidation, etc.) that should only run if the transaction succeeds.
+
+```typescript
+await sequelize.transaction(async (t) => {
+  const user = await User.create({ name: 'Eve' }, { transaction: t });
+
+  t.afterCommit(() => {
+    // Runs only if the transaction commits successfully.
+    sendWelcomeEmail(user.email);
+  });
+
+  t.afterRollback(() => {
+    // Runs only if the transaction is rolled back.
+    console.error('User creation was rolled back.');
+  });
+
+  t.afterTransaction(() => {
+    // Runs after commit OR rollback.
+    metrics.record('user.creation.attempted');
+  });
+});
+```
+
+## Practical example: bank transfer
+
+This example shows a money transfer where both the debit and credit must succeed together, otherwise the entire operation is rolled back.
+
+```typescript
+import { sequelize } from './sequelize';
+import { Account } from './models/account';
+
+async function transfer(fromId: number, toId: number, amount: number) {
+  return sequelize.transaction(async (t) => {
+    const from = await Account.findByPk(fromId, { transaction: t, lock: true });
+    const to = await Account.findByPk(toId, { transaction: t, lock: true });
+
+    if (!from || !to) {
+      throw new Error('Account not found');
+    }
+
+    if (from.balance < amount) {
+      throw new Error('Insufficient funds');
+    }
+
+    await from.decrement('balance', { by: amount, transaction: t });
+    await to.increment('balance', { by: amount, transaction: t });
+
+    return { from: from.id, to: to.id, amount };
+  });
+  // Transaction is committed automatically if no error was thrown.
+  // Any error causes an automatic rollback.
+}
+```
+
+## SQLite transaction types
+
+SQLite supports exclusive transaction types via `TransactionType`. This option is ignored on other dialects.
+
+```typescript
+import { TransactionType } from '@sequelize/core';
+
+await sequelize.transaction({ type: TransactionType.EXCLUSIVE }, async (t) => {
+  // ...
+});
+```
+
+| Type | Description |
+|---|---|
+| `DEFERRED` | Acquires no lock until the first read or write. Default. |
+| `IMMEDIATE` | Acquires a reserved lock on the first write. |
+| `EXCLUSIVE` | Acquires an exclusive lock immediately. |
+
+<CardGroup cols={2}>
+  <Card title="Hooks" icon="bolt" href="/hooks">
+    Execute custom code at key points in the query lifecycle.
+  </Card>
+  <Card title="Optimistic locking" icon="lock" href="/optimistic-locking">
+    Prevent lost updates with version numbers.
+  </Card>
+</CardGroup>

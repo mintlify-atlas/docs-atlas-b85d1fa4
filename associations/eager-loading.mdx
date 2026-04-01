@@ -1,0 +1,334 @@
+---
+title: "Eager & Lazy Loading"
+description: "Load associated data with your queries using include"
+keywords: ["eager loading", "lazy loading", "include", "findAll", "findOne", "JOIN", "N+1", "nested include"]
+---
+
+Sequelize gives you two ways to fetch associated records: **eager loading** retrieves associations in the same query using SQL JOINs, while **lazy loading** fetches them later by calling accessor methods on an already-loaded instance.
+
+<CardGroup cols={2}>
+  <Card title="Eager loading" icon="bolt">
+    Fetch the model and its associations in one query. Use `include` in `findAll` or `findOne`.
+  </Card>
+  <Card title="Lazy loading" icon="clock">
+    Fetch associations on demand after the parent is already loaded. Use the generated accessor methods.
+  </Card>
+</CardGroup>
+
+---
+
+## Eager loading
+
+Pass an `include` array to `findAll`, `findOne`, or `findByPk` to load associations alongside the primary model.
+
+### Basic include
+
+```typescript
+const posts = await Post.findAll({
+  include: [{ model: User }],
+});
+
+// Each post now has a `user` property
+console.log(posts[0].user.name);
+```
+
+Sequelize generates a LEFT OUTER JOIN between `posts` and `users`.
+
+### Include with an alias
+
+When an association was defined with `as`, you must pass the same alias in `include`:
+
+```typescript
+Post.belongsTo(User, { foreignKey: 'authorId', as: 'author' });
+
+const posts = await Post.findAll({
+  include: [{ model: User, as: 'author' }],
+});
+
+console.log(posts[0].author.name);
+```
+
+<Warning>
+If the association has an alias and you omit `as` from the `include`, Sequelize will throw an error at runtime.
+</Warning>
+
+### Shorthand syntax
+
+You can pass the model directly (without wrapping it in an object) when no alias or extra options are needed:
+
+```typescript
+const posts = await Post.findAll({
+  include: [User],
+});
+```
+
+Or pass the association object itself:
+
+```typescript
+const posts = await Post.findAll({
+  include: [Post.associations.author],
+});
+```
+
+### Including specific attributes
+
+By default, Sequelize fetches all columns from included models. Use `attributes` to select only what you need:
+
+```typescript
+const posts = await Post.findAll({
+  include: [{
+    model: User,
+    as: 'author',
+    attributes: ['id', 'name', 'email'],
+  }],
+});
+```
+
+To exclude specific attributes from the primary model while including all of them on the association:
+
+```typescript
+const posts = await Post.findAll({
+  attributes: { exclude: ['body'] },
+  include: [{ model: User, as: 'author' }],
+});
+```
+
+### Filtering on included associations
+
+Add a `where` clause inside the include to filter which associated records are returned:
+
+```typescript
+const posts = await Post.findAll({
+  include: [{
+    model: Tag,
+    where: { active: true },
+  }],
+});
+```
+
+<Note>
+When you add a `where` to an include, Sequelize automatically changes the JOIN to an INNER JOIN, meaning only parent rows that have at least one matching association are returned.
+</Note>
+
+### `required`: INNER JOIN vs LEFT JOIN
+
+Control the JOIN type explicitly with the `required` option:
+
+<Tabs>
+  <Tab title="required: false (default)">
+    Generates a **LEFT OUTER JOIN**. Returns all parent rows, even those with no matching association. The association is `null` when there's no match.
+
+    ```typescript
+    const posts = await Post.findAll({
+      include: [{
+        model: User,
+        required: false,  // LEFT JOIN — posts without an author are included
+      }],
+    });
+    ```
+  </Tab>
+  <Tab title="required: true">
+    Generates an **INNER JOIN**. Only returns parent rows that have at least one matching associated row.
+
+    ```typescript
+    const posts = await Post.findAll({
+      include: [{
+        model: User,
+        required: true,  // INNER JOIN — only posts that have an author
+      }],
+    });
+    ```
+  </Tab>
+</Tabs>
+
+### Nested includes
+
+Chain `include` inside an `include` to load deeply nested associations:
+
+```typescript
+const users = await User.findAll({
+  include: [{
+    model: Post,
+    as: 'posts',
+    include: [{
+      model: Comment,
+      as: 'comments',
+      include: [{
+        model: User,
+        as: 'commenter',
+        attributes: ['name'],
+      }],
+    }],
+  }],
+});
+
+// Access nested data
+console.log(users[0].posts[0].comments[0].commenter.name);
+```
+
+<Tip>
+Deep nesting can produce complex queries. Profile your queries in production and consider whether multiple simpler queries would be more efficient.
+</Tip>
+
+### Including all associations
+
+Pass `{ all: true }` to include every association defined on the model:
+
+```typescript
+const post = await Post.findByPk(1, {
+  include: [{ all: true }],
+});
+```
+
+<Warning>
+`{ all: true }` is convenient during development, but avoid it in production — it fetches everything, including associations you may not need.
+</Warning>
+
+### Filtering parent rows on an included association
+
+You can combine top-level `where` with association filters. To filter the parent by an attribute on the association, use `required: true`:
+
+```typescript
+// Only return users who have at least one published post
+const authors = await User.findAll({
+  include: [{
+    model: Post,
+    as: 'posts',
+    where: { published: true },
+    required: true,
+  }],
+});
+```
+
+### `separate: true` for HasMany
+
+When including a `HasMany` association, Sequelize JOINs the tables, which can cause the parent row to be duplicated in the result set (one row per associated child). For large datasets this is inefficient.
+
+Use `separate: true` to make Sequelize run a separate query for the association instead:
+
+```typescript
+const users = await User.findAll({
+  include: [{
+    model: Post,
+    as: 'posts',
+    separate: true,       // Runs a second SELECT instead of a JOIN
+    order: [['createdAt', 'DESC']],
+    limit: 5,
+  }],
+});
+```
+
+<Note>
+`separate: true` is only available for `HasMany` associations. It cannot be combined with `order` on the parent query for the included model, and top-level `limit` on the parent query is ignored when a `separate` include is present — set `limit` on the include itself.
+</Note>
+
+### Ordering by an included association
+
+```typescript
+const posts = await Post.findAll({
+  include: [{
+    model: User,
+    as: 'author',
+  }],
+  order: [
+    // [associated model, attribute, direction]
+    [{ model: User, as: 'author' }, 'name', 'ASC'],
+  ],
+});
+```
+
+---
+
+## Lazy loading
+
+Lazy loading means fetching associations after the parent is already in memory, by calling the accessor methods that Sequelize added when you defined the association.
+
+```typescript
+const post = await Post.findByPk(1);  // No JOIN — just the post
+
+// Fetch the author in a separate query
+const author = await post.getAuthor();
+
+// Fetch comments with an optional filter
+const recentComments = await post.getComments({
+  where: { createdAt: { [Op.gte]: lastWeek } },
+  order: [['createdAt', 'DESC']],
+  limit: 10,
+});
+```
+
+Each accessor method accepts the same options as the corresponding `findAll` / `findOne` call.
+
+### Available lazy-loading methods
+
+<Tabs>
+  <Tab title="BelongsTo / HasOne">
+    ```typescript
+    // Returns a single instance or null
+    const author = await post.getAuthor();
+    const profile = await user.getProfile();
+
+    // Replace the association
+    await post.setAuthor(anotherUser);
+
+    // Create and associate
+    const profile = await user.createProfile({ bio: 'Hello' });
+    ```
+  </Tab>
+  <Tab title="HasMany / BelongsToMany">
+    ```typescript
+    // Returns an array
+    const posts = await user.getPosts();
+
+    // Add / remove
+    await user.addPost(post);
+    await user.removePosts([post1, post2]);
+
+    // Check membership
+    const owns = await user.hasPost(post);
+
+    // Count
+    const n = await user.countPosts({ where: { published: true } });
+
+    // Create and associate
+    const newPost = await user.createPost({ title: 'Hi' });
+    ```
+  </Tab>
+</Tabs>
+
+---
+
+## Eager vs lazy loading
+
+| | Eager loading | Lazy loading |
+|---|---|---|
+| **Queries** | One query (with JOINs) | One query per association call |
+| **Best for** | Known upfront what you need | Conditional or infrequent access |
+| **N+1 risk** | No | Yes — see below |
+| **Flexibility** | Set at query time | Can be called any time after load |
+
+### The N+1 problem
+
+Lazy loading inside a loop is the most common source of N+1 queries in Sequelize applications:
+
+```typescript
+// BAD: runs 1 query for users + N queries for posts
+const users = await User.findAll();
+for (const user of users) {
+  const posts = await user.getPosts(); // One query per user!
+}
+
+// GOOD: runs 1 query total
+const users = await User.findAll({
+  include: [{ model: Post, as: 'posts' }],
+});
+for (const user of users) {
+  const posts = user.posts; // Already loaded
+}
+```
+
+Use eager loading whenever you know you'll need the associated data for every record in the result set.
+
+<Tip>
+If you only need associations for a subset of rows, consider fetching those rows first with a `where` clause, then eager-loading the associations in a second targeted query rather than loading all records with their associations.
+</Tip>

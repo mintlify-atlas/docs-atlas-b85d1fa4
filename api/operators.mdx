@@ -1,0 +1,315 @@
+---
+title: "Operators (Op)"
+description: "All comparison and logical operators available in the Op namespace"
+---
+
+The `Op` namespace provides Symbol-based operators for building `WHERE` clauses. Using Symbols (rather than strings) prevents SQL injection in operator keys.
+
+```typescript
+import { Op, fn } from '@sequelize/core';
+
+await User.findAll({
+  where: {
+    age: { [Op.gte]: 18 },
+    name: { [Op.like]: 'A%' },
+  }
+});
+```
+
+<Note>
+  All operators in the `Op` namespace are unique Symbols registered in the global Symbol registry. This ensures they work correctly even if multiple versions of Sequelize are loaded simultaneously.
+</Note>
+
+---
+
+## Comparison Operators
+
+These operators compare a column value to a provided value.
+
+| Operator | SQL | Description |
+|----------|-----|-------------|
+| `Op.eq` | `= value` | Equal |
+| `Op.ne` | `!= value` | Not equal |
+| `Op.is` | `IS value` | Is (for null/boolean comparisons) |
+| `Op.isNot` | `IS NOT value` | Is not |
+| `Op.gt` | `> value` | Greater than |
+| `Op.gte` | `>= value` | Greater than or equal |
+| `Op.lt` | `< value` | Less than |
+| `Op.lte` | `<= value` | Less than or equal |
+| `Op.between` | `BETWEEN a AND b` | Value is between two bounds (inclusive) |
+| `Op.notBetween` | `NOT BETWEEN a AND b` | Value is outside two bounds |
+| `Op.in` | `IN (...)` | Value is in a list |
+| `Op.notIn` | `NOT IN (...)` | Value is not in a list |
+| `Op.not` | `IS NOT TRUE` | Negation / IS NOT TRUE |
+
+```typescript
+// Equal
+{ age: { [Op.eq]: 25 } }        // age = 25
+{ age: { [Op.eq]: null } }       // age IS NULL
+
+// Not equal
+{ status: { [Op.ne]: 'banned' } }
+
+// Null / boolean IS checks
+{ deletedAt: { [Op.is]: null } }   // deletedAt IS NULL
+{ active: { [Op.isNot]: null } }   // active IS NOT NULL
+
+// Comparisons
+{ age: { [Op.gt]: 18 } }           // age > 18
+{ age: { [Op.gte]: 18 } }          // age >= 18
+{ age: { [Op.lt]: 65 } }           // age < 65
+{ age: { [Op.lte]: 65 } }          // age <= 65
+
+// Range
+{ age: { [Op.between]: [18, 65] } }
+{ age: { [Op.notBetween]: [0, 17] } }
+
+// List membership
+{ status: { [Op.in]: ['active', 'pending'] } }
+{ role: { [Op.notIn]: ['banned', 'deleted'] } }
+```
+
+---
+
+## Logical Operators
+
+Combine multiple conditions.
+
+| Operator | SQL | Description |
+|----------|-----|-------------|
+| `Op.and` | `AND (...)` | All conditions must match |
+| `Op.or` | `OR (...)` | At least one condition must match |
+| `Op.not` | `NOT (...)` | Negates the condition |
+
+```typescript
+// AND — all conditions must match (default when using a plain object)
+where: {
+  [Op.and]: [
+    { age: { [Op.gte]: 18 } },
+    { active: true },
+  ]
+}
+
+// OR — either condition matches
+where: {
+  [Op.or]: [
+    { role: 'admin' },
+    { role: 'moderator' },
+  ]
+}
+
+// Combining on a single attribute
+where: {
+  age: {
+    [Op.or]: {
+      [Op.lt]: 18,
+      [Op.gt]: 65,
+    }
+  }
+}
+
+// NOT — excludes matches
+where: {
+  [Op.not]: { status: 'banned' }
+}
+```
+
+---
+
+## String Matching Operators
+
+Pattern-based string comparisons.
+
+| Operator | SQL | Description |
+|----------|-----|-------------|
+| `Op.like` | `LIKE pattern` | Case-sensitive pattern match |
+| `Op.notLike` | `NOT LIKE pattern` | Case-sensitive pattern non-match |
+| `Op.iLike` | `ILIKE pattern` | Case-insensitive pattern match (PostgreSQL) |
+| `Op.notILike` | `NOT ILIKE pattern` | Case-insensitive pattern non-match (PostgreSQL) |
+| `Op.startsWith` | `LIKE 'value%'` | Starts with substring |
+| `Op.notStartsWith` | `NOT LIKE 'value%'` | Does not start with substring |
+| `Op.endsWith` | `LIKE '%value'` | Ends with substring |
+| `Op.notEndsWith` | `NOT LIKE '%value'` | Does not end with substring |
+| `Op.substring` | `LIKE '%value%'` | Contains substring |
+| `Op.notSubstring` | `NOT LIKE '%value%'` | Does not contain substring |
+| `Op.regexp` | `REGEXP / ~` pattern | Matches regex, case-sensitive (MySQL/PG) |
+| `Op.notRegexp` | `NOT REGEXP / !~` | Does not match regex (MySQL/PG) |
+| `Op.iRegexp` | `~*` pattern | Matches regex, case-insensitive (PostgreSQL) |
+| `Op.notIRegexp` | `!~*` pattern | Does not match regex, case-insensitive (PostgreSQL) |
+
+```typescript
+// LIKE patterns — use % for wildcard
+{ name: { [Op.like]: '%alice%' } }         // LIKE '%alice%'
+{ email: { [Op.notLike]: '%spam%' } }
+
+// Case-insensitive (PostgreSQL)
+{ name: { [Op.iLike]: '%alice%' } }
+
+// Convenience helpers (no need for % wildcards)
+{ name: { [Op.startsWith]: 'Al' } }         // LIKE 'Al%'
+{ name: { [Op.endsWith]: 'ice' } }          // LIKE '%ice'
+{ name: { [Op.substring]: 'ali' } }         // LIKE '%ali%'
+
+// Regular expressions
+{ name: { [Op.regexp]: '^[A-Z]' } }
+{ email: { [Op.iRegexp]: '^admin' } }       // PostgreSQL only
+```
+
+---
+
+## Range Operators (PostgreSQL)
+
+These operators work with PostgreSQL range column types (`DataTypes.RANGE`).
+
+| Operator | SQL | Description |
+|----------|-----|-------------|
+| `Op.overlap` | `&&` | Ranges overlap |
+| `Op.contains` | `@>` | Range contains element or other range |
+| `Op.contained` | `<@` | Range is contained by other range |
+| `Op.adjacent` | `-|-` | Ranges are adjacent (no gap, no overlap) |
+| `Op.strictLeft` | `<<` | Range is strictly left of other range |
+| `Op.strictRight` | `>>` | Range is strictly right of other range |
+| `Op.noExtendLeft` | `&>` | Range does not extend to the left of |
+| `Op.noExtendRight` | `&<` | Range does not extend to the right of |
+
+```typescript
+// Find events whose date range overlaps the given range
+{ dateRange: { [Op.overlap]: ['2024-01-01', '2024-12-31'] } }
+
+// Contains a specific value
+{ dateRange: { [Op.contains]: new Date('2024-06-15') } }
+
+// Strictly to the left
+{ priceRange: { [Op.strictLeft]: [100, 200] } }
+```
+
+---
+
+## Array Operators (PostgreSQL)
+
+These operators work with PostgreSQL array columns (`DataTypes.ARRAY`) and apply subquery semantics.
+
+| Operator | SQL | Description |
+|----------|-----|-------------|
+| `Op.any` | `ANY (ARRAY[...])` | Matches any value in the array |
+| `Op.all` | `ALL (...)` | Must match all values in the array/subquery |
+| `Op.values` | `VALUES (...)` | Generates a `VALUES` clause for use with `Op.any` / `Op.all` |
+| `Op.col` | `= "table"."column"` | References another column |
+
+```typescript
+// ANY — equivalent to IN for simple cases
+{ age: { [Op.gt]: { [Op.any]: [18, 21, 25] } } }
+
+// ALL — must satisfy the condition for every value
+{ age: { [Op.gt]: { [Op.all]: [10, 15, 16] } } }
+
+// Column reference
+{ userId: { [Op.eq]: { [Op.col]: 'post.authorId' } } }
+```
+
+---
+
+## JSON Operators (PostgreSQL JSONB)
+
+These operators work on `JSONB` columns.
+
+| Operator | SQL | Description |
+|----------|-----|-------------|
+| `Op.contains` | `@>` | JSONB contains the given object |
+| `Op.contained` | `<@` | JSONB is contained by the given object |
+| `Op.anyKeyExists` | `?|` | Any of the given keys exists as top-level key |
+| `Op.allKeysExist` | `?&` | All of the given keys exist as top-level keys |
+| `Op.match` | `@@` | Full-text search match |
+
+```typescript
+// JSONB contains
+{ metadata: { [Op.contains]: { role: 'admin' } } }
+
+// Key existence
+{ metadata: { [Op.anyKeyExists]: ['name', 'email'] } }
+{ metadata: { [Op.allKeysExist]: ['id', 'type'] } }
+
+// Full-text search (tsvector column)
+{ searchVector: { [Op.match]: fn('to_tsquery', 'fat & rat') } }
+```
+
+---
+
+## Combining Operators
+
+### Multi-condition WHERE
+
+```typescript
+await User.findAll({
+  where: {
+    // Implicit AND between top-level keys
+    active: true,
+    age: {
+      [Op.gte]: 18,
+      [Op.lte]: 65,
+    },
+    role: { [Op.in]: ['admin', 'moderator'] },
+    name: { [Op.notLike]: '%test%' },
+  }
+});
+```
+
+### OR across multiple columns
+
+```typescript
+await User.findAll({
+  where: {
+    [Op.or]: [
+      { email: 'alice@example.com' },
+      { username: 'alice' },
+    ]
+  }
+});
+```
+
+### AND with OR nested
+
+```typescript
+await Post.findAll({
+  where: {
+    published: true,
+    [Op.or]: [
+      { authorId: currentUserId },
+      { visibility: 'public' },
+    ]
+  }
+});
+// WHERE published = true AND (authorId = ? OR visibility = 'public')
+```
+
+### Complex nested conditions
+
+```typescript
+await Product.findAll({
+  where: {
+    [Op.and]: [
+      {
+        [Op.or]: [
+          { category: 'electronics' },
+          { category: 'computers' },
+        ]
+      },
+      { price: { [Op.lte]: 1000 } },
+      { stock: { [Op.gt]: 0 } },
+    ]
+  }
+});
+```
+
+### LIKE with ANY (PostgreSQL)
+
+```typescript
+// LIKE ANY (ARRAY['%cat%', '%hat%'])
+await Product.findAll({
+  where: {
+    name: {
+      [Op.like]: { [Op.any]: ['%cat%', '%hat%'] }
+    }
+  }
+});
+```

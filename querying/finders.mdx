@@ -1,0 +1,244 @@
+---
+title: "Finder Methods"
+description: "Methods for finding and fetching model instances"
+keywords: ["sequelize", "findAll", "findOne", "findByPk", "findOrCreate", "findAndCountAll", "count", "aggregate"]
+---
+
+Finder methods are static methods on every Model class that execute `SELECT` queries and return model instances or aggregated values.
+
+## findAll(options)
+
+Returns an array of all matching model instances. Returns every row when called with no arguments.
+
+```typescript
+// All users
+const users = await User.findAll();
+
+// With options
+const activeUsers = await User.findAll({
+  where: { status: 'active' },
+  order: [['createdAt', 'DESC']],
+  limit: 50,
+  offset: 0,
+});
+```
+
+### Selecting specific columns
+
+Use the `attributes` option to limit which columns are fetched.
+
+```typescript
+// Fetch only id, username, and email
+const users = await User.findAll({
+  attributes: ['id', 'username', 'email'],
+});
+
+// Exclude sensitive columns
+const users = await User.findAll({
+  attributes: { exclude: ['password', 'apiKey'] },
+});
+
+// Include an aggregate alongside normal attributes
+import { fn, col, literal } from '@sequelize/core';
+
+const users = await User.findAll({
+  attributes: {
+    include: [[fn('COUNT', col('posts.id')), 'postCount']],
+  },
+  include: [{ association: 'posts', attributes: [] }],
+  group: ['User.id'],
+});
+```
+
+---
+
+## findOne(options)
+
+Returns the first matching model instance, or `null` if no row matches. Internally adds `LIMIT 1` to the query.
+
+```typescript
+const user = await User.findOne({
+  where: { email: 'alice@example.com' },
+});
+
+if (user === null) {
+  console.log('User not found');
+}
+```
+
+---
+
+## findByPk(id)
+
+Finds a single row by its primary key. Returns the instance or `null`.
+
+```typescript
+const user = await User.findByPk(42);
+
+if (user) {
+  console.log(user.username);
+}
+```
+
+You can still pass options alongside the primary key:
+
+```typescript
+const user = await User.findByPk(42, {
+  attributes: ['id', 'username'],
+});
+```
+
+---
+
+## findOrCreate(options)
+
+Looks up a row using `where`. If no match is found, creates a new row using both `where` and `defaults` merged together. Returns `[instance, created]`.
+
+```typescript
+const [user, created] = await User.findOrCreate({
+  where: { email: 'bob@example.com' },
+  defaults: {
+    username: 'bob',
+    role: 'user',
+  },
+});
+
+if (created) {
+  console.log('A new user was created');
+} else {
+  console.log('Found existing user:', user.username);
+}
+```
+
+<Note>
+`findOrCreate` is not atomic by default. In environments with high concurrent writes, use a transaction and a unique constraint to avoid race conditions.
+</Note>
+
+---
+
+## findAndCountAll(options)
+
+Runs a `SELECT` plus a `COUNT` in a single operation. Returns `{ count, rows }`, which is useful for building paginated responses.
+
+```typescript
+const { count, rows } = await Post.findAndCountAll({
+  where: { published: true },
+  order: [['createdAt', 'DESC']],
+  limit: 20,
+  offset: 40,
+});
+
+console.log(`Total: ${count}, Page items: ${rows.length}`);
+```
+
+---
+
+## count(options)
+
+Returns the number of matching rows as a number.
+
+```typescript
+const total = await Post.count();
+const published = await Post.count({ where: { published: true } });
+```
+
+Use `distinct: true` with a `col` to count distinct values:
+
+```typescript
+const distinctAuthors = await Post.count({
+  col: 'authorId',
+  distinct: true,
+});
+```
+
+---
+
+## Aggregate helpers
+
+Sequelize provides `max()`, `min()`, and `sum()` as convenience wrappers around SQL aggregate functions.
+
+```typescript
+// Maximum age across all users
+const maxAge = await User.max('age');
+
+// Minimum age among active users
+const minAge = await User.min('age', {
+  where: { status: 'active' },
+});
+
+// Total of all order amounts
+const revenue = await Order.sum('amount', {
+  where: { status: 'completed' },
+});
+```
+
+---
+
+## Including associations (eager loading)
+
+Use the `include` option to eagerly load associated models. Define your associations first, then pass them in finder calls.
+
+```typescript
+// Load users with all their posts
+const users = await User.findAll({
+  include: ['posts'],
+});
+
+// Nested eager loading: posts → comments
+const users = await User.findAll({
+  include: [
+    {
+      association: 'posts',
+      include: ['comments'],
+    },
+  ],
+});
+
+// Filter on an association (converts to INNER JOIN)
+const usersWithRecentPosts = await User.findAll({
+  include: [
+    {
+      association: 'posts',
+      where: { published: true },
+      required: true,  // INNER JOIN
+    },
+  ],
+});
+```
+
+---
+
+## Grouping with GROUP BY
+
+Pass a `group` option to add a `GROUP BY` clause. Use it together with aggregate `attributes`.
+
+```typescript
+import { fn, col } from '@sequelize/core';
+
+const postCountByAuthor = await Post.findAll({
+  attributes: [
+    'authorId',
+    [fn('COUNT', col('id')), 'count'],
+  ],
+  group: ['authorId'],
+  order: [[fn('COUNT', col('id')), 'DESC']],
+});
+
+// Each row: { authorId: 5, count: '12' }
+```
+
+---
+
+## Quick reference
+
+| Method | Returns | SQL |
+|---|---|---|
+| `findAll(options)` | `Model[]` | `SELECT … [WHERE] [LIMIT]` |
+| `findOne(options)` | `Model \| null` | `SELECT … LIMIT 1` |
+| `findByPk(id)` | `Model \| null` | `SELECT … WHERE pk = id` |
+| `findOrCreate(options)` | `[Model, boolean]` | `SELECT` then `INSERT` if needed |
+| `findAndCountAll(options)` | `{ count, rows }` | `SELECT COUNT(*) + SELECT …` |
+| `count(options)` | `number` | `SELECT COUNT(*)` |
+| `max(field, options)` | `number \| null` | `SELECT MAX(field)` |
+| `min(field, options)` | `number \| null` | `SELECT MIN(field)` |
+| `sum(field, options)` | `number \| null` | `SELECT SUM(field)` |

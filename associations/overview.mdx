@@ -1,0 +1,473 @@
+---
+title: "Associations"
+description: "Define relationships between Sequelize models"
+keywords: ["associations", "belongsTo", "hasOne", "hasMany", "belongsToMany", "foreign key", "relationships"]
+---
+
+Associations link models together so Sequelize can generate the correct SQL JOINs and add helper methods to your instances. Every association has a **source** model (the model you call the method on) and a **target** model (the model you pass as the first argument).
+
+```typescript
+// Source: User  Target: Post
+User.hasMany(Post, { foreignKey: 'authorId' });
+```
+
+There are four association types. They differ in where the foreign key lives and whether the relationship is one-to-one, one-to-many, or many-to-many.
+
+<Tabs>
+  <Tab title="BelongsTo">
+    Foreign key lives on the **source** model.
+
+    ```typescript
+    Comment.belongsTo(Post, { foreignKey: 'postId' });
+    // Adds `postId` to the `comments` table
+    ```
+  </Tab>
+  <Tab title="HasOne">
+    Foreign key lives on the **target** model.
+
+    ```typescript
+    User.hasOne(Profile, { foreignKey: 'userId' });
+    // Adds `userId` to the `profiles` table
+    ```
+  </Tab>
+  <Tab title="HasMany">
+    Foreign key lives on the **target** model (one-to-many).
+
+    ```typescript
+    User.hasMany(Post, { foreignKey: 'authorId' });
+    // Adds `authorId` to the `posts` table
+    ```
+  </Tab>
+  <Tab title="BelongsToMany">
+    Many-to-many via a junction table.
+
+    ```typescript
+    User.belongsToMany(Project, { through: 'UserProjects' });
+    Project.belongsToMany(User, { through: 'UserProjects' });
+    // Creates a `UserProjects` table with `userId` and `projectId`
+    ```
+  </Tab>
+</Tabs>
+
+## Source and target models
+
+When you call an association method:
+
+- The **source** is the model the method is called on.
+- The **target** is the model passed as the first argument.
+- Sequelize adds instance methods (accessors) to the **source** model.
+- The foreign key is added to whichever model the association type requires.
+
+```typescript
+// Source = Comment, Target = Post
+// Foreign key (postId) goes on Comment (the source)
+Comment.belongsTo(Post);
+
+// Source = Post, Target = Comment
+// Foreign key (postId) goes on Comment (the target)
+Post.hasMany(Comment);
+```
+
+<Note>
+Defining only `Post.hasMany(Comment)` is enough for the database schema, but defining both directions gives you accessor methods on both models and makes your intent explicit.
+</Note>
+
+## BelongsTo
+
+`BelongsTo` represents a one-to-one or many-to-one relationship where the **foreign key lives on the source model**.
+
+```typescript
+import { Model, DataTypes } from '@sequelize/core';
+
+class Post extends Model {}
+Post.init({ title: DataTypes.STRING }, { sequelize });
+
+class Comment extends Model {}
+Comment.init({ body: DataTypes.TEXT }, { sequelize });
+
+Comment.belongsTo(Post, { foreignKey: 'postId' });
+```
+
+### Foreign key
+
+Sequelize adds `postId` (or whatever you specify via `foreignKey`) to the `comments` table. If you omit `foreignKey`, Sequelize derives it from the target model name: `post` → `postId`.
+
+### Accessor methods
+
+After defining the association, every `Comment` instance gains three methods:
+
+| Method | Description |
+|--------|-------------|
+| `comment.getPost(options?)` | Fetches the associated `Post` |
+| `comment.setPost(post, options?)` | Updates the foreign key to point to `post` |
+| `comment.createPost(values, options?)` | Creates a new `Post` and sets the foreign key |
+
+```typescript
+const comment = await Comment.findByPk(1);
+
+// Fetch the post
+const post = await comment.getPost();
+
+// Change the associated post
+await comment.setPost(otherPost);
+
+// Create a new post and associate it
+const newPost = await comment.createPost({ title: 'Hello' });
+```
+
+### Key options
+
+| Option | Description |
+|--------|-------------|
+| `foreignKey` | Name of the foreign key attribute on the source model. Accepts a string or an attribute options object. |
+| `as` | Alias for the association. Used in `include` and for naming the accessor methods. |
+| `targetKey` | The attribute on the target model that the foreign key references. Defaults to the primary key. |
+| `onDelete` | Referential action on delete. Defaults to `'SET NULL'` (or `'CASCADE'` if the FK is non-nullable). |
+| `onUpdate` | Referential action on update. Defaults to `'CASCADE'`. |
+| `foreignKeyConstraints` | Set to `false` to skip creating a database-level FK constraint. |
+
+### TypeScript decorator
+
+<CodeGroup>
+
+```typescript decorator syntax
+import { Model, InferAttributes, InferCreationAttributes } from '@sequelize/core';
+import { BelongsTo, Attribute, NotNull } from '@sequelize/core/decorators-legacy';
+
+class Comment extends Model<InferAttributes<Comment>, InferCreationAttributes<Comment>> {
+  @BelongsTo(() => Post, 'postId')
+  declare post: Post | null;
+
+  @Attribute(DataTypes.INTEGER)
+  declare postId: number | null;
+}
+```
+
+```typescript static method syntax
+Comment.belongsTo(Post, {
+  foreignKey: 'postId',
+  as: 'post',
+});
+```
+
+</CodeGroup>
+
+<Note>
+When using decorators, the property name (`post`) becomes the association alias automatically. You cannot pass `as` in the options object when using decorators.
+</Note>
+
+---
+
+## HasOne
+
+`HasOne` represents a one-to-one relationship where the **foreign key lives on the target model**.
+
+```typescript
+class User extends Model {}
+User.init({ name: DataTypes.STRING }, { sequelize });
+
+class Profile extends Model {}
+Profile.init({ bio: DataTypes.TEXT }, { sequelize });
+
+User.hasOne(Profile, { foreignKey: 'userId' });
+```
+
+### Foreign key
+
+Sequelize adds `userId` to the `profiles` table. The default name is derived from the source model: `user` → `userId`.
+
+### Accessor methods
+
+| Method | Description |
+|--------|-------------|
+| `user.getProfile(options?)` | Fetches the associated `Profile` |
+| `user.setProfile(profile, options?)` | Sets the foreign key on the profile |
+| `user.createProfile(values, options?)` | Creates a new `Profile` associated with the user |
+
+```typescript
+const user = await User.findByPk(1);
+
+const profile = await user.getProfile();
+await user.setProfile(newProfile);
+const profile2 = await user.createProfile({ bio: 'Hello' });
+```
+
+### Key options
+
+| Option | Description |
+|--------|-------------|
+| `foreignKey` | Name of the foreign key on the **target** model. |
+| `sourceKey` | The attribute on the source model referenced by the foreign key. Defaults to the primary key. |
+| `as` | Alias for the association. |
+| `onDelete` | Referential action on delete. |
+| `onUpdate` | Referential action on update. |
+
+### TypeScript decorator
+
+<CodeGroup>
+
+```typescript decorator syntax
+class User extends Model<InferAttributes<User>, InferCreationAttributes<User>> {
+  @HasOne(() => Profile, 'userId')
+  declare profile: Profile | null;
+}
+```
+
+```typescript static method syntax
+User.hasOne(Profile, {
+  foreignKey: 'userId',
+  as: 'profile',
+});
+```
+
+</CodeGroup>
+
+---
+
+## HasMany
+
+`HasMany` represents a one-to-many relationship where the **foreign key lives on the target model**.
+
+```typescript
+class User extends Model {}
+class Post extends Model {}
+
+User.hasMany(Post, { foreignKey: 'authorId' });
+```
+
+### Foreign key
+
+Sequelize adds `authorId` to the `posts` table. Default name: `user` → `userId`.
+
+### Accessor methods
+
+HasMany adds plural accessor methods to the source model:
+
+| Method | Description |
+|--------|-------------|
+| `user.getPosts(options?)` | Returns all associated posts |
+| `user.setPosts(posts, options?)` | Replaces all associations with the given posts |
+| `user.addPost(post, options?)` | Adds a single post |
+| `user.addPosts(posts, options?)` | Adds multiple posts |
+| `user.removePost(post, options?)` | Removes a single post |
+| `user.removePosts(posts, options?)` | Removes multiple posts |
+| `user.hasPost(post, options?)` | Returns `true` if the post is associated |
+| `user.hasPosts(posts, options?)` | Returns `true` if all given posts are associated |
+| `user.countPosts(options?)` | Returns the count of associated posts |
+| `user.createPost(values, options?)` | Creates and associates a new post |
+
+```typescript
+const user = await User.findByPk(1);
+
+// Fetch all posts by this user
+const posts = await user.getPosts();
+
+// Create a new post for this user
+const post = await user.createPost({ title: 'New post' });
+
+// Check membership
+const isMine = await user.hasPost(post);
+
+// Count
+const count = await user.countPosts({ where: { published: true } });
+```
+
+### Key options
+
+| Option | Description |
+|--------|-------------|
+| `foreignKey` | Name of the FK on the **target** model. |
+| `sourceKey` | Attribute on the source model referenced by the FK. Defaults to the primary key. |
+| `as` | Alias, used when naming accessor methods and in `include`. |
+| `onDelete` | Referential action on delete. |
+| `onUpdate` | Referential action on update. |
+| `scope` | A default `where` clause applied to all queries through this association. |
+
+### TypeScript decorator
+
+<CodeGroup>
+
+```typescript decorator syntax
+class User extends Model<InferAttributes<User>, InferCreationAttributes<User>> {
+  @HasMany(() => Post, 'authorId')
+  declare posts: Post[];
+}
+```
+
+```typescript static method syntax
+User.hasMany(Post, {
+  foreignKey: 'authorId',
+  as: 'posts',
+});
+```
+
+</CodeGroup>
+
+---
+
+## BelongsToMany
+
+`BelongsToMany` represents a many-to-many relationship using a **junction (through) table**.
+
+```typescript
+class User extends Model {}
+class Project extends Model {}
+
+User.belongsToMany(Project, { through: 'UserProjects' });
+Project.belongsToMany(User, { through: 'UserProjects' });
+```
+
+<Warning>
+Unlike the other association types, `BelongsToMany` automatically creates its paired association on the target model. You only need to call it once. If you also define it on the target, Sequelize will throw an error about duplicate associations. To configure the inverse side, use the `inverse` option.
+</Warning>
+
+### Junction table
+
+Passing a string to `through` creates an auto-managed table with two foreign key columns. Passing a Model class gives you full control over the junction table:
+
+```typescript
+class UserProject extends Model {}
+UserProject.init({
+  role: DataTypes.STRING,
+  joinedAt: DataTypes.DATE,
+}, { sequelize });
+
+User.belongsToMany(Project, {
+  through: UserProject,
+  foreignKey: 'userId',    // FK pointing to User on the junction table
+  otherKey: 'projectId',   // FK pointing to Project on the junction table
+});
+```
+
+### Accessor methods
+
+| Method | Description |
+|--------|-------------|
+| `user.getProjects(options?)` | Returns all associated projects |
+| `user.setProjects(projects, options?)` | Replaces all associations |
+| `user.addProject(project, options?)` | Adds a single project |
+| `user.addProjects(projects, options?)` | Adds multiple projects |
+| `user.removeProject(project, options?)` | Removes a single project |
+| `user.removeProjects(projects, options?)` | Removes multiple projects |
+| `user.hasProject(project, options?)` | Returns `true` if the project is associated |
+| `user.hasProjects(projects, options?)` | Returns `true` if all given projects are associated |
+| `user.countProjects(options?)` | Returns the count of associated projects |
+| `user.createProject(values, options?)` | Creates and associates a new project |
+
+```typescript
+const user = await User.findByPk(1);
+
+// Add with junction table attributes
+await user.addProject(project, { through: { role: 'manager' } });
+
+// Read junction table attributes
+const projects = await user.getProjects();
+const p = projects[0];
+console.log(p.UserProject.role); // 'manager'
+```
+
+### Key options
+
+| Option | Description |
+|--------|-------------|
+| `through` | **Required.** The junction model or table name string. |
+| `foreignKey` | FK on the junction table pointing to the **source** model. |
+| `otherKey` | FK on the junction table pointing to the **target** model. |
+| `as` | Alias for this side of the association. |
+| `inverse.as` | Alias for the automatically created reverse association. |
+| `sourceKey` | Attribute on the source model referenced by `foreignKey`. |
+| `targetKey` | Attribute on the target model referenced by `otherKey`. |
+| `through.scope` | A default `where` applied to junction table queries. |
+
+### TypeScript decorator
+
+<CodeGroup>
+
+```typescript decorator syntax
+class User extends Model<InferAttributes<User>, InferCreationAttributes<User>> {
+  @BelongsToMany(() => Project, {
+    through: 'UserProjects',
+    inverse: { as: 'members' },
+  })
+  declare projects: Project[];
+}
+```
+
+```typescript static method syntax
+User.belongsToMany(Project, {
+  through: 'UserProjects',
+  as: 'projects',
+  inverse: { as: 'members' },
+});
+```
+
+</CodeGroup>
+
+---
+
+## Defining both directions
+
+For `HasOne` and `HasMany`, you can define the inverse association explicitly instead of calling both methods separately. Use the `inverse` option:
+
+```typescript
+// Equivalent to calling both User.hasMany(Post) and Post.belongsTo(User)
+User.hasMany(Post, {
+  foreignKey: 'authorId',
+  as: 'posts',
+  inverse: {
+    as: 'author',
+  },
+});
+```
+
+Or define them separately for full control:
+
+```typescript
+User.hasMany(Post, { foreignKey: 'authorId', as: 'posts' });
+Post.belongsTo(User, { foreignKey: 'authorId', as: 'author' });
+```
+
+<Tip>
+Defining both sides is recommended. It makes queries easier to write and ensures you have accessor methods on both models.
+</Tip>
+
+## Aliases and naming collisions
+
+Use the `as` option when associating the same model twice, or to give the association a name different from the target model:
+
+```typescript
+User.hasMany(Picture, { as: 'photos' });
+User.belongsTo(Picture, { as: 'profilePicture', foreignKeyConstraints: false });
+
+// Each alias creates separate accessor methods:
+user.getPhotos();
+user.getProfilePicture();
+```
+
+When using `as`, you must specify the same alias in `include` queries:
+
+```typescript
+User.findAll({
+  include: [
+    { model: Picture, as: 'photos' },
+    { model: Picture, as: 'profilePicture' },
+  ],
+});
+```
+
+## Default referential actions
+
+All associations use `CASCADE` on update by default. On delete:
+
+- `BelongsTo`, `HasOne`, `HasMany`: `SET NULL` (or `CASCADE` if the FK is non-nullable)
+- `BelongsToMany`: `CASCADE`
+
+Override these with `onDelete` and `onUpdate`:
+
+```typescript
+User.hasMany(Post, {
+  foreignKey: { name: 'authorId', allowNull: false },
+  onDelete: 'CASCADE',
+  onUpdate: 'CASCADE',
+});
+```
